@@ -40,7 +40,7 @@ const pinCursorSvg = `
 </svg>
 `;
 
-const pinCursorDataUrl = `url("data:image/svg+xml;utf8,${encodeURIComponent(pinCursorSvg.trim())}") 16 32, crosshair`;
+
 
 const ProjectMap: React.FC = () => {
   const project = useProjectStore((state) => state.project);

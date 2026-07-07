@@ -13,33 +13,6 @@ const FitBounds: React.FC<{ bounds: L.LatLngBoundsExpression }> = ({ bounds }) =
   return null;
 };
 
-const pinCursorSvg = `
-<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
-  <defs>
-    <radialGradient id="pinGrad" cx="35%" cy="35%" r="65%">
-      <stop offset="0%" stop-color="#ff6b6b" />
-      <stop offset="60%" stop-color="#e50914" />
-      <stop offset="100%" stop-color="#800000" />
-    </radialGradient>
-    <linearGradient id="needleGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#aaa" />
-      <stop offset="50%" stop-color="#fff" />
-      <stop offset="100%" stop-color="#555" />
-    </linearGradient>
-  </defs>
-  <!-- Needle shaft -->
-  <rect x="15" y="15" width="2" height="14" fill="url(%23needleGrad)" />
-  <!-- Needle point -->
-  <path d="M15 29 L16 32 L17 29 Z" fill="#888" />
-  <!-- Pin head shadow -->
-  <circle cx="17" cy="11" r="8" fill="rgba(0,0,0,0.3)" />
-  <!-- Pin head -->
-  <circle cx="16" cy="10" r="8" fill="url(%23pinGrad)" stroke="#b30000" stroke-width="0.5" />
-  <!-- Gloss highlight -->
-  <circle cx="14" cy="8" r="2.5" fill="white" opacity="0.6" />
-</svg>
-`;
-
 
 
 const ProjectMap: React.FC = () => {

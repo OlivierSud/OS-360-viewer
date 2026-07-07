@@ -8,9 +8,11 @@ export interface MapConfig {
 export interface ProjectMetadata {
   title: string;
   author?: string;
+  description?: string;
   createdAt?: string;
   updatedAt?: string;
   defaultScene?: string;
+  splashImage?: string;
 }
 
 export interface Project {

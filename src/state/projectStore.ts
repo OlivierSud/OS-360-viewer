@@ -8,6 +8,7 @@ interface ProjectState {
   scenes: Scene[];
   selectedSceneId: string | null;
   selectedHotspotId: string | null;
+  currentProjectId: string | null;
   mode: 'editor' | 'viewer';
   currentYaw: number;
   
@@ -20,6 +21,7 @@ interface ProjectState {
   setMode: (mode: 'editor' | 'viewer') => void;
   setMapConfig: (mapConfig: MapConfig) => void;
   setCurrentYaw: (yaw: number) => void;
+  setCurrentProjectId: (id: string | null) => void;
   updateScene: (id: string, updates: Partial<Scene>) => void;
   addLink: (sourceId: string, targetId: string) => void;
   removeLink: (sourceId: string, targetId: string) => void;
@@ -28,6 +30,9 @@ interface ProjectState {
   addHotspot: (sceneId: string, hotspot: Hotspot) => void;
   updateHotspot: (sceneId: string, hotspotId: string, updates: Partial<Hotspot>) => void;
   removeHotspot: (sceneId: string, hotspotId: string) => void;
+  showProjectSettings: boolean;
+  setShowProjectSettings: (val: boolean) => void;
+  updateProjectTitle: (title: string) => void;
 }
 
 export const useProjectStore = create<ProjectState>((set) => ({
@@ -35,10 +40,12 @@ export const useProjectStore = create<ProjectState>((set) => ({
   scenes: [],
   selectedSceneId: null,
   selectedHotspotId: null,
+  currentProjectId: null,
   mode: 'editor',
   currentYaw: 0,
 
   setProject: (project) => set({ project, scenes: project.scenes }),
+  setCurrentProjectId: (id) => set({ currentProjectId: id }),
   setScenes: (scenes) => set((state) => ({ 
     scenes, 
     project: state.project ? { ...state.project, scenes } : null 
@@ -194,6 +201,13 @@ export const useProjectStore = create<ProjectState>((set) => ({
   }),
   isAddingHotspot: false,
   setIsAddingHotspot: (val) => set({ isAddingHotspot: val }),
+  showProjectSettings: false,
+  setShowProjectSettings: (val) => set({ showProjectSettings: val }),
+  updateProjectTitle: (title) => set((state) => ({
+    project: state.project
+      ? { ...state.project, project: { ...state.project.project, title } }
+      : null
+  })),
   addHotspot: (sceneId, hotspot) => set((state) => {
     const newScenes = state.scenes.map(s => {
       if (s.id === sceneId) {

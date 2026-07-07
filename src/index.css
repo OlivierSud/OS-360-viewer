@@ -34,6 +34,13 @@ body {
 .toolbar h1 {
   font-size: 1.2rem;
   margin: 0;
+  white-space: nowrap;
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .editor-main {
@@ -68,7 +75,8 @@ body {
   height: 100vh;
 }
 
-button {
+/* Scoped to map-control buttons only */
+.map-control-btn {
   background-color: var(--accent-color);
   color: white;
   border: none;
@@ -77,7 +85,7 @@ button {
   border-radius: 4px;
 }
 
-button:hover {
+.map-control-btn:hover {
   background-color: #005f9e;
 }
 

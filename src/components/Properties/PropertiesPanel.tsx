@@ -1,11 +1,300 @@
-import React from 'react';
+import React, { useState, useRef } from 'react';
 import { useProjectStore } from '../../state/projectStore';
 
-const PropertiesPanel: React.FC = () => {
+/* ── Small reusable field row ── */
+const Field: React.FC<{
+  label: string;
+  children: React.ReactNode;
+}> = ({ label, children }) => (
+  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+    <label style={{ fontSize: '0.72rem', color: '#888', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+      {label}
+    </label>
+    {children}
+  </div>
+);
+
+const inputStyle: React.CSSProperties = {
+  background: '#1e1e1e',
+  border: '1px solid #444',
+  color: 'white',
+  padding: '6px 8px',
+  borderRadius: '4px',
+  fontSize: '0.85rem',
+  outline: 'none',
+  width: '100%',
+  boxSizing: 'border-box',
+  fontFamily: 'system-ui, sans-serif',
+};
+
+/* ══════════════════════════════════════════════════════════
+   Project Settings Panel
+══════════════════════════════════════════════════════════ */
+const ProjectSettingsPanel: React.FC = () => {
+  const project = useProjectStore((s) => s.project);
+  const updateProjectTitle = useProjectStore((s) => s.updateProjectTitle);
+  const setProject = useProjectStore((s) => s.setProject);
+  const setShowProjectSettings = useProjectStore((s) => s.setShowProjectSettings);
+  const currentProjectId = useProjectStore((s) => s.currentProjectId);
+  const scenes = useProjectStore((s) => s.scenes);
+
+  const [copied, setCopied] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  if (!project) return null;
+  const meta = project.project;
+
+  const updateMeta = (updates: Partial<typeof meta>) => {
+    setProject({ ...project, project: { ...meta, ...updates } });
+  };
+
+  /* Viewer URL — will be fully functional once the viewer route is wired up */
+  const viewerUrl = currentProjectId
+    ? `${window.location.origin}/viewer?id=${currentProjectId}`
+    : null;
+
+  const handleCopy = () => {
+    if (viewerUrl) {
+      navigator.clipboard.writeText(viewerUrl).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1800);
+      });
+    }
+  };
+
+  /* Splash image: file → object URL (will be replaced by a real upload in a later sprint) */
+  const handleSplashFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    updateMeta({ splashImage: url });
+  };
+
+  return (
+    <aside
+      className="properties-panel"
+      style={{ padding: '15px', color: 'white', display: 'flex', flexDirection: 'column', gap: '16px', overflowY: 'auto' }}
+    >
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #333', paddingBottom: '10px' }}>
+        <h2 style={{ margin: 0, fontSize: '1rem', fontWeight: 700 }}>⚙️ Paramètres du projet</h2>
+        <button
+          onClick={() => setShowProjectSettings(false)}
+          style={{ background: 'none', border: 'none', color: '#666', cursor: 'pointer', fontSize: '1rem', padding: '2px 5px' }}
+          title="Fermer"
+        >✕</button>
+      </div>
+
+      {/* ── General ── */}
+      <Field label="Titre du projet">
+        <input
+          type="text"
+          value={meta.title}
+          onChange={(e) => updateProjectTitle(e.target.value)}
+          style={inputStyle}
+          placeholder="Nom du projet"
+        />
+      </Field>
+
+      <Field label="Auteur">
+        <input
+          type="text"
+          value={meta.author ?? ''}
+          onChange={(e) => updateMeta({ author: e.target.value })}
+          style={inputStyle}
+          placeholder="Nom de l'auteur"
+        />
+      </Field>
+
+      <Field label="Description">
+        <textarea
+          value={meta.description ?? ''}
+          onChange={(e) => updateMeta({ description: e.target.value })}
+          rows={3}
+          placeholder="Description courte du projet…"
+          style={{ ...inputStyle, resize: 'vertical' }}
+        />
+      </Field>
+
+      <Field label="Scène par défaut">
+        <select
+          value={meta.defaultScene ?? ''}
+          onChange={(e) => updateMeta({ defaultScene: e.target.value || undefined })}
+          style={inputStyle}
+        >
+          <option value="">— Aucune —</option>
+          {scenes.map((s) => (
+            <option key={s.id} value={s.id}>{s.title}</option>
+          ))}
+        </select>
+      </Field>
+
+      {/* ── Splash image ── */}
+      <div style={{ borderTop: '1px solid #333', paddingTop: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <div style={{ fontSize: '0.72rem', color: '#888', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+          🖼️ Image de démarrage <span style={{ color: '#555', fontStyle: 'italic', textTransform: 'none' }}>(optionnelle)</span>
+        </div>
+        <div style={{ fontSize: '0.78rem', color: '#555' }}>
+          Cette image s'affiche pendant le chargement de la visioneuse.
+        </div>
+
+        {/* Preview */}
+        {meta.splashImage ? (
+          <div style={{ position: 'relative' }}>
+            <img
+              src={meta.splashImage}
+              alt="splash preview"
+              style={{
+                width: '100%',
+                maxHeight: '130px',
+                objectFit: 'cover',
+                borderRadius: '6px',
+                border: '1px solid #444',
+                display: 'block',
+              }}
+              onError={(e) => { (e.target as HTMLImageElement).style.opacity = '0.3'; }}
+            />
+            <button
+              onClick={() => updateMeta({ splashImage: undefined })}
+              title="Supprimer l'image"
+              style={{
+                position: 'absolute',
+                top: '6px',
+                right: '6px',
+                background: 'rgba(0,0,0,0.7)',
+                border: '1px solid #555',
+                color: 'white',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '0.75rem',
+                padding: '2px 6px',
+              }}
+            >✕ Retirer</button>
+          </div>
+        ) : (
+          <div
+            onClick={() => fileInputRef.current?.click()}
+            style={{
+              border: '2px dashed #444',
+              borderRadius: '6px',
+              padding: '20px',
+              textAlign: 'center',
+              cursor: 'pointer',
+              color: '#555',
+              fontSize: '0.82rem',
+              transition: 'border-color 0.15s',
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.borderColor = '#666')}
+            onMouseLeave={(e) => (e.currentTarget.style.borderColor = '#444')}
+          >
+            📁 Cliquez pour choisir une image
+            <div style={{ fontSize: '0.72rem', marginTop: '4px', color: '#444' }}>JPG, PNG, WebP recommandés</div>
+          </div>
+        )}
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          style={{ display: 'none' }}
+          onChange={handleSplashFile}
+        />
+
+        <Field label="ou URL directe">
+          <input
+            type="text"
+            value={meta.splashImage ?? ''}
+            onChange={(e) => updateMeta({ splashImage: e.target.value || undefined })}
+            placeholder="https://exemple.com/splash.jpg"
+            style={inputStyle}
+          />
+        </Field>
+      </div>
+
+      {/* ── Viewer link ── */}
+      <div style={{ borderTop: '1px solid #333', paddingTop: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <div style={{ fontSize: '0.72rem', color: '#888', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+          🔗 Lien Visioneuse
+        </div>
+
+        {viewerUrl ? (
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <input
+              readOnly
+              value={viewerUrl}
+              style={{
+                ...inputStyle,
+                color: '#888',
+                fontSize: '0.78rem',
+                cursor: 'text',
+                flex: 1,
+                minWidth: 0,
+              }}
+              onClick={(e) => (e.target as HTMLInputElement).select()}
+            />
+            <button
+              onClick={handleCopy}
+              title="Copier le lien"
+              style={{
+                padding: '5px 10px',
+                background: copied ? '#2e7d32' : '#2d2d2d',
+                border: '1px solid #444',
+                borderRadius: '4px',
+                color: copied ? '#a5d6a7' : 'white',
+                cursor: 'pointer',
+                fontSize: '0.8rem',
+                whiteSpace: 'nowrap',
+                transition: 'background 0.2s',
+                flexShrink: 0,
+              }}
+            >
+              {copied ? '✓ Copié' : '📋 Copier'}
+            </button>
+          </div>
+        ) : (
+          <div style={{ fontSize: '0.8rem', color: '#555', fontStyle: 'italic' }}>
+            Sauvegardez le projet d'abord pour générer le lien.
+          </div>
+        )}
+
+        <div style={{ fontSize: '0.75rem', color: '#444', lineHeight: 1.5 }}>
+          Ce lien sera actif une fois la visioneuse déployée. Partagez-le avec vos clients pour qu'ils accèdent directement au tour virtuel.
+        </div>
+      </div>
+
+      {/* ── Read-only info ── */}
+      <div style={{ borderTop: '1px solid #333', paddingTop: '12px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+        <div style={{ fontSize: '0.72rem', color: '#555', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Informations</div>
+        {meta.createdAt && (
+          <div style={{ fontSize: '0.78rem', color: '#666' }}>
+            Créé le : {new Date(meta.createdAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}
+          </div>
+        )}
+        {meta.updatedAt && (
+          <div style={{ fontSize: '0.78rem', color: '#666' }}>
+            Modifié le : {new Date(meta.updatedAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+          </div>
+        )}
+        <div style={{ fontSize: '0.78rem', color: '#666' }}>Scènes : {scenes.length}</div>
+        {currentProjectId && (
+          <div style={{ fontSize: '0.72rem', color: '#444', fontFamily: 'monospace', marginTop: '2px' }}>
+            ID : {currentProjectId}
+          </div>
+        )}
+      </div>
+    </aside>
+  );
+};
+
+
+/* ══════════════════════════════════════════════════════════
+   Hotspot Properties Panel (existing content)
+══════════════════════════════════════════════════════════ */
+const HotspotPropertiesPanel: React.FC = () => {
   const scenes = useProjectStore((state) => state.scenes);
   const selectedSceneId = useProjectStore((state) => state.selectedSceneId);
   const selectedHotspotId = useProjectStore((state) => state.selectedHotspotId);
-  
+
   const selectHotspot = useProjectStore((state) => state.selectHotspot);
   const updateHotspot = useProjectStore((state) => state.updateHotspot);
   const removeHotspot = useProjectStore((state) => state.removeHotspot);
@@ -14,9 +303,12 @@ const PropertiesPanel: React.FC = () => {
   const selectedHotspot = selectedScene?.hotspots?.find(h => h.id === selectedHotspotId);
 
   return (
-    <aside className="properties-panel" style={{ padding: '15px', color: 'white', display: 'flex', flexDirection: 'column', gap: '20px', userSelect: 'none' }}>
+    <aside
+      className="properties-panel"
+      style={{ padding: '15px', color: 'white', display: 'flex', flexDirection: 'column', gap: '20px', userSelect: 'none', overflowY: 'auto' }}
+    >
       <h2 style={{ margin: 0, fontSize: '1.2rem', borderBottom: '1px solid #333', paddingBottom: '10px' }}>Properties</h2>
-      
+
       {selectedScene ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
           <div>
@@ -27,8 +319,7 @@ const PropertiesPanel: React.FC = () => {
 
           <div style={{ borderTop: '1px solid #333', paddingTop: '15px' }}>
             <h4 style={{ margin: '0 0 10px 0', color: '#888', fontSize: '0.8rem', textTransform: 'uppercase' }}>Hotspots</h4>
-            
-            {/* Hotspots List */}
+
             {selectedScene.hotspots && selectedScene.hotspots.length > 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', maxHeight: '150px', overflowY: 'auto', marginBottom: '15px', paddingRight: '5px' }}>
                 {selectedScene.hotspots.map(h => {
@@ -55,84 +346,46 @@ const PropertiesPanel: React.FC = () => {
                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{h.content}</span>
                       </div>
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          removeHotspot(selectedScene.id, h.id);
-                        }}
+                        onClick={(e) => { e.stopPropagation(); removeHotspot(selectedScene.id, h.id); }}
                         style={{ background: 'none', border: 'none', color: '#d32f2f', cursor: 'pointer', fontSize: '0.9rem', padding: '0 4px' }}
-                        title="Delete hotspot"
-                      >
-                        🗑️
-                      </button>
+                        title="Supprimer le hotspot"
+                      >🗑️</button>
                     </div>
                   );
                 })}
               </div>
             ) : (
               <div style={{ fontSize: '0.85rem', color: '#555', fontStyle: 'italic', marginBottom: '15px' }}>
-                Aucun hotspot dans cette vue. Utilisez le bouton "Add Hotspot" en haut à droite du panorama pour en ajouter un.
+                Aucun hotspot dans cette vue. Utilisez "Add Hotspot" dans la vue 360°.
               </div>
             )}
 
-            {/* Selected Hotspot Edit Form */}
             {selectedHotspot ? (
-              <div style={{
-                backgroundColor: '#252526',
-                border: '1px solid #333',
-                borderRadius: '6px',
-                padding: '12px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '10px'
-              }}>
+              <div style={{ backgroundColor: '#252526', border: '1px solid #333', borderRadius: '6px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 <div style={{ fontWeight: 'bold', fontSize: '0.85rem', borderBottom: '1px solid #333', paddingBottom: '6px', color: '#888' }}>
                   Edit Hotspot
                 </div>
-                
-                {/* Type */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <label style={{ fontSize: '0.75rem', color: '#aaa' }}>Type</label>
+
+                <Field label="Type">
                   <select
                     value={selectedHotspot.type}
                     onChange={(e) => updateHotspot(selectedScene.id, selectedHotspot.id, { type: e.target.value as any })}
-                    style={{
-                      background: '#1e1e1e',
-                      border: '1px solid #444',
-                      color: 'white',
-                      padding: '4px 6px',
-                      borderRadius: '4px',
-                      fontSize: '0.85rem',
-                      outline: 'none'
-                    }}
+                    style={{ ...inputStyle }}
                   >
                     <option value="text">ℹ️ Texte</option>
                     <option value="video">🎥 Vidéo (YouTube)</option>
                     <option value="image">🖼️ Image (URL)</option>
                   </select>
-                </div>
+                </Field>
 
-                {/* Content */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <label style={{ fontSize: '0.75rem', color: '#aaa' }}>
-                    {selectedHotspot.type === 'video' ? 'Lien YouTube' : selectedHotspot.type === 'image' ? 'URL de l\'image' : 'Contenu Texte'}
-                  </label>
+                <Field label={selectedHotspot.type === 'video' ? 'Lien YouTube' : selectedHotspot.type === 'image' ? "URL de l'image" : 'Contenu Texte'}>
                   {selectedHotspot.type === 'video' ? (
                     <input
                       type="text"
                       value={selectedHotspot.content}
                       onChange={(e) => updateHotspot(selectedScene.id, selectedHotspot.id, { content: e.target.value })}
                       placeholder="https://www.youtube.com/watch?v=..."
-                      style={{
-                        background: '#1e1e1e',
-                        border: '1px solid #444',
-                        color: 'white',
-                        padding: '6px 8px',
-                        borderRadius: '4px',
-                        fontSize: '0.85rem',
-                        outline: 'none',
-                        width: '100%',
-                        boxSizing: 'border-box'
-                      }}
+                      style={inputStyle}
                     />
                   ) : selectedHotspot.type === 'image' ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -141,29 +394,13 @@ const PropertiesPanel: React.FC = () => {
                         value={selectedHotspot.content}
                         onChange={(e) => updateHotspot(selectedScene.id, selectedHotspot.id, { content: e.target.value })}
                         placeholder="https://exemple.com/image.jpg"
-                        style={{
-                          background: '#1e1e1e',
-                          border: '1px solid #444',
-                          color: 'white',
-                          padding: '6px 8px',
-                          borderRadius: '4px',
-                          fontSize: '0.85rem',
-                          outline: 'none',
-                          width: '100%',
-                          boxSizing: 'border-box'
-                        }}
+                        style={inputStyle}
                       />
                       {selectedHotspot.content && (
                         <img
                           src={selectedHotspot.content}
                           alt="preview"
-                          style={{
-                            width: '100%',
-                            maxHeight: '120px',
-                            objectFit: 'cover',
-                            borderRadius: '4px',
-                            border: '1px solid #333'
-                          }}
+                          style={{ width: '100%', maxHeight: '120px', objectFit: 'cover', borderRadius: '4px', border: '1px solid #333' }}
                           onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                           onLoad={(e) => { (e.target as HTMLImageElement).style.display = 'block'; }}
                         />
@@ -174,28 +411,16 @@ const PropertiesPanel: React.FC = () => {
                       value={selectedHotspot.content}
                       onChange={(e) => updateHotspot(selectedScene.id, selectedHotspot.id, { content: e.target.value })}
                       rows={4}
-                      placeholder="Saisissez votre texte..."
-                      style={{
-                        background: '#1e1e1e',
-                        border: '1px solid #444',
-                        color: 'white',
-                        padding: '6px 8px',
-                        borderRadius: '4px',
-                        fontSize: '0.85rem',
-                        resize: 'vertical',
-                        outline: 'none',
-                        fontFamily: 'sans-serif',
-                        width: '100%',
-                        boxSizing: 'border-box'
-                      }}
+                      placeholder="Saisissez votre texte…"
+                      style={{ ...inputStyle, resize: 'vertical' }}
                     />
                   )}
-                </div>
+                </Field>
               </div>
             ) : (
               selectedScene.hotspots && selectedScene.hotspots.length > 0 && (
                 <div style={{ fontSize: '0.8rem', color: '#555', fontStyle: 'italic', textAlign: 'center' }}>
-                  Sélectionnez un hotspot dans la liste ci-dessus pour modifier ses propriétés.
+                  Sélectionnez un hotspot ci-dessus pour l'éditer.
                 </div>
               )
             )}
@@ -203,11 +428,19 @@ const PropertiesPanel: React.FC = () => {
         </div>
       ) : (
         <div style={{ fontSize: '0.9rem', color: '#555', fontStyle: 'italic', textAlign: 'center', marginTop: '20px' }}>
-          Sélectionnez un point de vue sur la carte ou dans la liste de gauche pour configurer ses propriétés.
+          Sélectionnez un point de vue pour configurer ses propriétés.
         </div>
       )}
     </aside>
   );
+};
+
+/* ══════════════════════════════════════════════════════════
+   Root: switches between the two panels
+══════════════════════════════════════════════════════════ */
+const PropertiesPanel: React.FC = () => {
+  const showProjectSettings = useProjectStore((s) => s.showProjectSettings);
+  return showProjectSettings ? <ProjectSettingsPanel /> : <HotspotPropertiesPanel />;
 };
 
 export default PropertiesPanel;

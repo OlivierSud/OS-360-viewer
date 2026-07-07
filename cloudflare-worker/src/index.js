@@ -102,6 +102,21 @@ export default {
       return json({ ok: true }, 200, origin);
     }
 
+    // ── GET /assets/:key — serve R2 assets with CORS headers ─────────────
+    const matchAsset = path.match(/^\/assets\/(.+)$/);
+    if (request.method === 'GET' && matchAsset) {
+      const key = matchAsset[1].split('/').map(decodeURIComponent).join('/');
+      const object = await env.ASSETS.get(key);
+      if (!object) return error('Asset not found', 404, origin);
+
+      const headers = new Headers(corsHeaders(origin));
+      object.writeHttpMetadata(headers);
+      headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+      headers.set('ETag', object.httpEtag);
+
+      return new Response(object.body, { headers });
+    }
+
     // ── POST /api/upload/:folder/:filename — upload asset to R2 ───────────
     const matchUpload = path.match(/^\/api\/upload\/([^/]+)\/(.+)$/);
     if (request.method === 'POST' && matchUpload) {
@@ -114,7 +129,8 @@ export default {
 
       await env.ASSETS.put(key, body, { httpMetadata: { contentType } });
 
-      const publicUrl = `https://pub-8992e41086d04520b3b67be8ab99bc15.r2.dev/${key}`;
+      const encodedKey = key.split('/').map(encodeURIComponent).join('/');
+      const publicUrl = `${url.origin}/assets/${encodedKey}`;
       return json({ ok: true, url: publicUrl }, 200, origin);
     }
 

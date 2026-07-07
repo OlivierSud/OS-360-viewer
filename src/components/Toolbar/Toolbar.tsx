@@ -11,17 +11,15 @@ const Toolbar: React.FC = () => {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
   const [saveFlash, setSaveFlash] = useState(false);
+  const [exportFlash, setExportFlash] = useState(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
 
-  /* Focus input when editing starts */
   useEffect(() => {
     if (editingTitle) {
       setTitleDraft(project?.project?.title ?? '');
-      setTimeout(() => {
-        titleInputRef.current?.select();
-      }, 30);
+      setTimeout(() => titleInputRef.current?.select(), 30);
     }
-  }, [editingTitle]);
+  }, [editingTitle, project?.project?.title]);
 
   const commitTitle = () => {
     const trimmed = titleDraft.trim();
@@ -29,17 +27,29 @@ const Toolbar: React.FC = () => {
     setEditingTitle(false);
   };
 
-  const handleSave = () => {
-    if (typeof (window as any).__saveCurrentProject === 'function') {
-      (window as any).__saveCurrentProject();
+  const handleSave = async () => {
+    if (typeof (window as any).__saveCurrentProject !== 'function') return;
+
+    const savedId = await (window as any).__saveCurrentProject();
+    if (savedId) {
       setSaveFlash(true);
       setTimeout(() => setSaveFlash(false), 1500);
     }
   };
 
+  const handleExport = async () => {
+    if (typeof (window as any).__exportCurrentProject !== 'function') return;
+
+    const viewerUrl = await (window as any).__exportCurrentProject();
+    if (viewerUrl) {
+      await navigator.clipboard.writeText(viewerUrl);
+      setExportFlash(true);
+      setTimeout(() => setExportFlash(false), 1800);
+    }
+  };
+
   const projectTitle = project?.project?.title ?? 'Sans titre';
 
-  /* ── Shared button base ── */
   const toolBtn = (extra?: React.CSSProperties): React.CSSProperties => ({
     padding: '5px 12px',
     border: '1px solid #444',
@@ -59,15 +69,11 @@ const Toolbar: React.FC = () => {
 
   return (
     <header className="toolbar">
-      {/* ── Left: App name ── */}
       <h1 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#d4d4d4', whiteSpace: 'nowrap' }}>
         Virtual Tour Editor
       </h1>
 
-      {/* ── Right: controls ── */}
       <div className="toolbar-actions">
-
-        {/* Project name + gear */}
         <div style={{
           display: 'flex',
           alignItems: 'center',
@@ -87,11 +93,11 @@ const Toolbar: React.FC = () => {
             <input
               ref={titleInputRef}
               value={titleDraft}
-              onChange={(e) => setTitleDraft(e.target.value)}
+              onChange={(event) => setTitleDraft(event.target.value)}
               onBlur={commitTitle}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') commitTitle();
-                if (e.key === 'Escape') setEditingTitle(false);
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') commitTitle();
+                if (event.key === 'Escape') setEditingTitle(false);
               }}
               style={{
                 background: 'transparent',
@@ -130,7 +136,6 @@ const Toolbar: React.FC = () => {
             </button>
           )}
 
-          {/* Pencil icon */}
           {!editingTitle && (
             <button
               title="Renommer le projet"
@@ -149,7 +154,6 @@ const Toolbar: React.FC = () => {
             </button>
           )}
 
-          {/* Gear icon → project settings panel */}
           <button
             title="Paramètres du projet"
             onClick={() => setShowProjectSettings(!showProjectSettings)}
@@ -168,24 +172,28 @@ const Toolbar: React.FC = () => {
           </button>
         </div>
 
-        {/* Project selector dropdown */}
         <ProjectDropdown />
 
-        {/* Save */}
         <button
-          onClick={handleSave}
+          onClick={() => void handleSave()}
           style={toolBtn({
             background: saveFlash ? '#2e7d32' : '#2d2d2d',
             color: saveFlash ? '#a5d6a7' : 'white',
             borderColor: saveFlash ? '#4caf50' : '#444',
           })}
         >
-          {saveFlash ? '✓ Sauvegardé' : '💾 Save'}
+          {saveFlash ? '✓ Cloudflare' : '💾 Save'}
         </button>
 
-        {/* Export */}
-        <button style={toolBtn()}>
-          📤 Export
+        <button
+          onClick={() => void handleExport()}
+          style={toolBtn({
+            background: exportFlash ? '#1f4f7a' : '#2d2d2d',
+            color: exportFlash ? '#bbdefb' : 'white',
+            borderColor: exportFlash ? '#2196f3' : '#444',
+          })}
+        >
+          {exportFlash ? '✓ Lien copié' : '📤 Export'}
         </button>
       </div>
     </header>

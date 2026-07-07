@@ -1,5 +1,9 @@
 import React, { useState, useRef } from 'react';
 import { useProjectStore } from '../../state/projectStore';
+import { createViewerUrl, deleteCloudProject } from '../../services/cloudflareApi';
+import { createTrackedObjectUrl } from '../../services/mediaRegistry';
+import { createProjectId } from '../../storage/projectRegistry';
+import type { Project } from '../../models/Project';
 
 /* ── Small reusable field row ── */
 const Field: React.FC<{
@@ -35,10 +39,14 @@ const ProjectSettingsPanel: React.FC = () => {
   const updateProjectTitle = useProjectStore((s) => s.updateProjectTitle);
   const setProject = useProjectStore((s) => s.setProject);
   const setShowProjectSettings = useProjectStore((s) => s.setShowProjectSettings);
+  const setCurrentProjectId = useProjectStore((s) => s.setCurrentProjectId);
+  const selectScene = useProjectStore((s) => s.selectScene);
   const currentProjectId = useProjectStore((s) => s.currentProjectId);
   const scenes = useProjectStore((s) => s.scenes);
 
   const [copied, setCopied] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!project) return null;
@@ -48,9 +56,8 @@ const ProjectSettingsPanel: React.FC = () => {
     setProject({ ...project, project: { ...meta, ...updates } });
   };
 
-  /* Viewer URL — will be fully functional once the viewer route is wired up */
   const viewerUrl = currentProjectId
-    ? `${window.location.origin}/viewer?id=${currentProjectId}`
+    ? createViewerUrl(currentProjectId)
     : null;
 
   const handleCopy = () => {
@@ -66,8 +73,39 @@ const ProjectSettingsPanel: React.FC = () => {
   const handleSplashFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const url = URL.createObjectURL(file);
+    const url = createTrackedObjectUrl(file);
     updateMeta({ splashImage: url });
+  };
+
+  const resetToBlankProject = () => {
+    const id = createProjectId();
+    const blankProject: Project = {
+      version: 1,
+      project: { title: 'Nouveau Projet', createdAt: new Date().toISOString() },
+      scenes: [],
+    };
+
+    setProject(blankProject);
+    setCurrentProjectId(id);
+    selectScene(null);
+    setShowProjectSettings(false);
+  };
+
+  const handleDeleteProject = async () => {
+    if (!currentProjectId) {
+      resetToBlankProject();
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      await deleteCloudProject(currentProjectId);
+      window.dispatchEvent(new Event('cloud-projects-changed'));
+      resetToBlankProject();
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteConfirm(false);
+    }
   };
 
   return (
@@ -262,6 +300,30 @@ const ProjectSettingsPanel: React.FC = () => {
         </div>
       </div>
 
+      <div style={{ borderTop: '1px solid #333', paddingTop: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <div style={{ fontSize: '0.72rem', color: '#888', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+          Zone dangereuse
+        </div>
+        <button
+          onClick={() => setShowDeleteConfirm(true)}
+          style={{
+            padding: '8px 10px',
+            background: '#3a1f1f',
+            border: '1px solid #8a3333',
+            color: '#ffcdd2',
+            borderRadius: '5px',
+            cursor: 'pointer',
+            fontSize: '0.85rem',
+            textAlign: 'left',
+          }}
+        >
+          🗑️ Supprimer le projet
+        </button>
+        <div style={{ fontSize: '0.75rem', color: '#555', lineHeight: 1.4 }}>
+          Supprime le projet de Cloudflare. Cette action ne peut pas être annulée.
+        </div>
+      </div>
+
       {/* ── Read-only info ── */}
       <div style={{ borderTop: '1px solid #333', paddingTop: '12px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
         <div style={{ fontSize: '0.72rem', color: '#555', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Informations</div>
@@ -282,6 +344,71 @@ const ProjectSettingsPanel: React.FC = () => {
           </div>
         )}
       </div>
+
+      {showDeleteConfirm && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.65)',
+            zIndex: 10000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <div
+            style={{
+              width: '360px',
+              background: '#1e1e1e',
+              border: '1px solid #8a3333',
+              borderRadius: '8px',
+              boxShadow: '0 12px 30px rgba(0,0,0,0.7)',
+              padding: '18px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '14px',
+            }}
+          >
+            <div style={{ fontSize: '1rem', fontWeight: 700, color: '#ffcdd2' }}>
+              Supprimer ce projet ?
+            </div>
+            <div style={{ fontSize: '0.86rem', color: '#aaa', lineHeight: 1.5 }}>
+              Le projet « {meta.title} » sera supprimé de Cloudflare. La visionneuse associée ne pourra plus le charger.
+            </div>
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={isDeleting}
+                style={{
+                  padding: '7px 12px',
+                  background: '#2d2d2d',
+                  border: '1px solid #444',
+                  color: 'white',
+                  borderRadius: '5px',
+                  cursor: isDeleting ? 'default' : 'pointer',
+                }}
+              >
+                Annuler
+              </button>
+              <button
+                onClick={() => void handleDeleteProject()}
+                disabled={isDeleting}
+                style={{
+                  padding: '7px 12px',
+                  background: '#8a3333',
+                  border: '1px solid #b94a4a',
+                  color: 'white',
+                  borderRadius: '5px',
+                  cursor: isDeleting ? 'default' : 'pointer',
+                }}
+              >
+                {isDeleting ? 'Suppression…' : 'Supprimer définitivement'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </aside>
   );
 };
@@ -301,6 +428,17 @@ const HotspotPropertiesPanel: React.FC = () => {
 
   const selectedScene = scenes.find(s => s.id === selectedSceneId);
   const selectedHotspot = selectedScene?.hotspots?.find(h => h.id === selectedHotspotId);
+
+  const handleHotspotFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!selectedScene || !selectedHotspot) return;
+
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const url = createTrackedObjectUrl(file);
+    updateHotspot(selectedScene.id, selectedHotspot.id, { content: url });
+    e.target.value = '';
+  };
 
   return (
     <aside
@@ -378,24 +516,71 @@ const HotspotPropertiesPanel: React.FC = () => {
                   </select>
                 </Field>
 
-                <Field label={selectedHotspot.type === 'video' ? 'Lien YouTube' : selectedHotspot.type === 'image' ? "URL de l'image" : 'Contenu Texte'}>
+                <Field label={selectedHotspot.type === 'video' ? 'Vidéo' : selectedHotspot.type === 'image' ? "Image" : 'Contenu Texte'}>
                   {selectedHotspot.type === 'video' ? (
-                    <input
-                      type="text"
-                      value={selectedHotspot.content}
-                      onChange={(e) => updateHotspot(selectedScene.id, selectedHotspot.id, { content: e.target.value })}
-                      placeholder="https://www.youtube.com/watch?v=..."
-                      style={inputStyle}
-                    />
-                  ) : selectedHotspot.type === 'image' ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                       <input
                         type="text"
                         value={selectedHotspot.content}
                         onChange={(e) => updateHotspot(selectedScene.id, selectedHotspot.id, { content: e.target.value })}
-                        placeholder="https://exemple.com/image.jpg"
+                        placeholder="Lien web vidéo ou fichier local"
                         style={inputStyle}
                       />
+                      <label
+                        style={{
+                          padding: '8px',
+                          border: '1px dashed #555',
+                          borderRadius: '5px',
+                          color: '#aaa',
+                          cursor: 'pointer',
+                          textAlign: 'center',
+                          fontSize: '0.82rem',
+                        }}
+                      >
+                        📁 Choisir une vidéo locale
+                        <input
+                          type="file"
+                          accept="video/*"
+                          style={{ display: 'none' }}
+                          onChange={handleHotspotFile}
+                        />
+                      </label>
+                      {selectedHotspot.content && selectedHotspot.content.startsWith('blob:') && (
+                        <video
+                          src={selectedHotspot.content}
+                          controls
+                          style={{ width: '100%', maxHeight: '140px', borderRadius: '4px', border: '1px solid #333' }}
+                        />
+                      )}
+                    </div>
+                  ) : selectedHotspot.type === 'image' ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <input
+                        type="text"
+                        value={selectedHotspot.content}
+                        onChange={(e) => updateHotspot(selectedScene.id, selectedHotspot.id, { content: e.target.value })}
+                        placeholder="Lien web image ou fichier local"
+                        style={inputStyle}
+                      />
+                      <label
+                        style={{
+                          padding: '8px',
+                          border: '1px dashed #555',
+                          borderRadius: '5px',
+                          color: '#aaa',
+                          cursor: 'pointer',
+                          textAlign: 'center',
+                          fontSize: '0.82rem',
+                        }}
+                      >
+                        📁 Choisir une image locale
+                        <input
+                          type="file"
+                          accept="image/*"
+                          style={{ display: 'none' }}
+                          onChange={handleHotspotFile}
+                        />
+                      </label>
                       {selectedHotspot.content && (
                         <img
                           src={selectedHotspot.content}

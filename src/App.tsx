@@ -4,7 +4,7 @@ import ViewerPage from './pages/ViewerPage';
 
 function App() {
   return (
-    <Router>
+    <Router basename={import.meta.env.BASE_URL}>
       <Routes>
         <Route path="/editor" element={<EditorPage />} />
         <Route path="/viewer" element={<ViewerPage />} />

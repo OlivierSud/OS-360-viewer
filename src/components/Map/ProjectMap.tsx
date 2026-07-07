@@ -4,6 +4,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useProjectStore } from '../../state/projectStore';
 import type { Scene } from '../../models/Scene';
+import { createTrackedObjectUrl } from '../../services/mediaRegistry';
 
 const FitBounds: React.FC<{ bounds: L.LatLngBoundsExpression }> = ({ bounds }) => {
   const map = useMap();
@@ -117,7 +118,7 @@ const ProjectMap: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const url = URL.createObjectURL(file);
+    const url = createTrackedObjectUrl(file);
     const img = new Image();
     img.onload = () => {
       setMapConfig({
@@ -134,7 +135,7 @@ const ProjectMap: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file || !pendingPosition) return;
 
-    const url = URL.createObjectURL(file);
+    const url = createTrackedObjectUrl(file);
     const sceneId = `scene_${Date.now()}`;
 
     const newScene: Scene = {

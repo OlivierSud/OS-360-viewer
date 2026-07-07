@@ -1,87 +1,36 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { createProjectId } from '../../storage/projectRegistry';
 import {
-  listProjects,
-  loadProjectById,
-  saveProject,
-  deleteProject,
-  createProjectId,
-  migrateOldProject,
-  type ProjectEntry,
-} from '../../storage/projectRegistry';
+  createViewerUrl,
+  deleteCloudProject,
+  listCloudProjects,
+  loadCloudProject,
+  saveCloudProject,
+  type CloudProjectEntry,
+} from '../../services/cloudflareApi';
+import { uploadProjectAssetsToR2 } from '../../services/projectAssetUpload';
 import { useProjectStore } from '../../state/projectStore';
 import type { Project } from '../../models/Project';
 
 const ProjectDropdown: React.FC = () => {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
-  const [projects, setProjects] = useState<ProjectEntry[]>([]);
+  const [cloudProjects, setCloudProjects] = useState<CloudProjectEntry[]>([]);
   const [currentId, setCurrentIdState] = useState<string | null>(null);
+  const [syncStatus, setSyncStatus] = useState<string | null>(null);
+  const [isCloudBusy, setIsCloudBusy] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
   const storeProject = useProjectStore((s) => s.project);
   const setProject = useProjectStore((s) => s.setProject);
   const setCurrentProjectId = useProjectStore((s) => s.setCurrentProjectId);
+  const selectScene = useProjectStore((s) => s.selectScene);
 
-  const setCurrentId = (id: string | null) => {
+  const setCurrentId = useCallback((id: string | null) => {
     setCurrentIdState(id);
     setCurrentProjectId(id);
-  };
-
-  /* ── Bootstrap: migrate old data, load index, auto-load or create project ── */
-  useEffect(() => {
-    migrateOldProject();
-    const entries = listProjects();
-    setProjects(entries);
-
-    if (entries.length > 0) {
-      // Load the most-recently updated project
-      const latest = [...entries].sort(
-        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-      )[0];
-      openProject(latest.id, entries);
-    } else {
-      // Create a first blank project
-      createAndOpen();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  /* ── Close on outside click ── */
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
-
-  /* ── Focus search when panel opens ── */
-  useEffect(() => {
-    if (open) setTimeout(() => searchRef.current?.focus(), 50);
-  }, [open]);
-
-  /* ── Helpers ── */
-  const refreshList = () => {
-    const entries = listProjects();
-    setProjects(entries);
-    return entries;
-  };
-
-  const openProject = useCallback((id: string, entries?: ProjectEntry[]) => {
-    const raw = loadProjectById(id);
-    if (!raw) return;
-    try {
-      const parsed: Project = JSON.parse(raw);
-      setProject(parsed);
-      setCurrentId(id);
-      setOpen(false);
-    } catch {
-      console.error('Failed to parse project', id);
-    }
-  }, [setProject]);
+  }, [setCurrentProjectId]);
 
   const createAndOpen = useCallback(() => {
     const id = createProjectId();
@@ -91,40 +40,120 @@ const ProjectDropdown: React.FC = () => {
       project: { title, createdAt: new Date().toISOString() },
       scenes: [],
     };
-    const data = JSON.stringify(blank);
-    saveProject(id, title, data);
+
     setProject(blank);
     setCurrentId(id);
     setOpen(false);
-    refreshList();
-  }, [setProject]);
+    setSyncStatus('Nouveau projet prêt à enregistrer sur Cloudflare');
+  }, [setCurrentId, setProject]);
 
-  /* ── Save current project ── */
-  const handleSave = useCallback(() => {
-    if (!storeProject) return;
+  const refreshCloudList = useCallback(async () => {
+    setIsCloudBusy(true);
+    try {
+      const entries = await listCloudProjects();
+      setCloudProjects(entries);
+      setSyncStatus(null);
+      return entries;
+    } catch (error) {
+      setSyncStatus(error instanceof Error ? error.message : 'Cloudflare indisponible');
+      return [];
+    } finally {
+      setIsCloudBusy(false);
+    }
+  }, []);
+
+  const openCloudProject = useCallback(async (id: string) => {
+    setIsCloudBusy(true);
+    try {
+      const record = await loadCloudProject(id);
+      setProject(record.project_data);
+      selectScene(record.project_data.project.defaultScene ?? record.project_data.scenes[0]?.id ?? null);
+      setCurrentId(id);
+      setOpen(false);
+      setSyncStatus('Projet chargé depuis Cloudflare');
+    } catch (error) {
+      setSyncStatus(error instanceof Error ? error.message : 'Chargement cloud impossible');
+    } finally {
+      setIsCloudBusy(false);
+    }
+  }, [selectScene, setCurrentId, setProject]);
+
+  const handleCloudSave = useCallback(async (): Promise<string | null> => {
+    if (!storeProject) return null;
+
     const id = currentId ?? createProjectId();
-    const title = storeProject.project.title;
-    const data = JSON.stringify({
+    const updatedProject: Project = {
       ...storeProject,
       project: { ...storeProject.project, updatedAt: new Date().toISOString() },
-    });
-    saveProject(id, title, data);
+    };
+
     if (!currentId) setCurrentId(id);
-    refreshList();
-  }, [storeProject, currentId]);
+    setIsCloudBusy(true);
+    setSyncStatus('Upload des médias vers R2…');
 
-  /* ── Expose save so Toolbar can call it ── */
+    try {
+      const projectWithUploadedAssets = await uploadProjectAssetsToR2(updatedProject, id);
+      setSyncStatus('Enregistrement sur Cloudflare…');
+      await saveCloudProject({ id, project: projectWithUploadedAssets });
+      setProject(projectWithUploadedAssets);
+      await refreshCloudList();
+      setSyncStatus('Projet enregistré sur Cloudflare');
+      return id;
+    } catch (error) {
+      setSyncStatus(error instanceof Error ? error.message : 'Sauvegarde Cloudflare impossible');
+      return null;
+    } finally {
+      setIsCloudBusy(false);
+    }
+  }, [currentId, refreshCloudList, setCurrentId, setProject, storeProject]);
+
   useEffect(() => {
-    (window as any).__saveCurrentProject = handleSave;
-  }, [handleSave]);
+    void refreshCloudList().then((entries) => {
+      if (entries.length > 0) {
+        void openCloudProject(entries[0].id);
+      } else {
+        createAndOpen();
+      }
+    });
+  }, [createAndOpen, openCloudProject, refreshCloudList]);
 
-  const filtered = projects.filter((p) =>
-    p.title.toLowerCase().includes(search.toLowerCase())
+  useEffect(() => {
+    const handler = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  useEffect(() => {
+    if (open) setTimeout(() => searchRef.current?.focus(), 50);
+  }, [open]);
+
+  useEffect(() => {
+    const refreshProjects = () => {
+      void refreshCloudList();
+    };
+
+    window.addEventListener('cloud-projects-changed', refreshProjects);
+    return () => window.removeEventListener('cloud-projects-changed', refreshProjects);
+  }, [refreshCloudList]);
+
+  useEffect(() => {
+    (window as any).__saveCurrentProject = handleCloudSave;
+    (window as any).__exportCurrentProject = async () => {
+      const savedId = await handleCloudSave();
+      return savedId ? createViewerUrl(savedId) : null;
+    };
+  }, [handleCloudSave]);
+
+  const filteredCloud = cloudProjects.filter((project) =>
+    project.title.toLowerCase().includes(search.toLowerCase())
   );
 
   const currentTitle = storeProject?.project?.title ?? 'Projects';
 
-  /* ── Styles ── */
   const btn: React.CSSProperties = {
     display: 'flex',
     alignItems: 'center',
@@ -146,7 +175,7 @@ const ProjectDropdown: React.FC = () => {
     position: 'absolute',
     top: 'calc(100% + 6px)',
     right: 0,
-    width: '260px',
+    width: '280px',
     backgroundColor: '#1e1e1e',
     border: '1px solid #3d3d3d',
     borderRadius: '8px',
@@ -159,9 +188,8 @@ const ProjectDropdown: React.FC = () => {
 
   return (
     <div ref={dropdownRef} style={{ position: 'relative' }}>
-      {/* Trigger button */}
-      <button style={btn} onClick={() => setOpen((o) => !o)}>
-        <span style={{ fontSize: '1rem' }}>📁</span>
+      <button style={btn} onClick={() => setOpen((value) => !value)}>
+        <span style={{ fontSize: '1rem' }}>☁️</span>
         <span
           style={{
             overflow: 'hidden',
@@ -177,10 +205,12 @@ const ProjectDropdown: React.FC = () => {
         </span>
       </button>
 
-      {/* Dropdown panel */}
       {open && (
         <div style={panel}>
-          {/* Search bar */}
+          <div style={{ padding: '8px 10px', borderBottom: '1px solid #333', color: '#a5d6a7', fontSize: '0.8rem' }}>
+            Projets Cloudflare
+          </div>
+
           <div style={{ padding: '10px', borderBottom: '1px solid #333' }}>
             <div
               style={{
@@ -198,7 +228,7 @@ const ProjectDropdown: React.FC = () => {
                 ref={searchRef}
                 type="text"
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(event) => setSearch(event.target.value)}
                 placeholder="Rechercher un projet…"
                 style={{
                   background: 'none',
@@ -222,32 +252,33 @@ const ProjectDropdown: React.FC = () => {
                     padding: 0,
                   }}
                 >
-                  ✕
+                  ×
                 </button>
               )}
             </div>
           </div>
 
-          {/* Project list */}
+          {syncStatus && (
+            <div style={{ padding: '8px 10px', color: '#aaa', fontSize: '0.76rem', borderBottom: '1px solid #333' }}>
+              {syncStatus}
+            </div>
+          )}
+
           <div style={{ maxHeight: '260px', overflowY: 'auto' }}>
-            {filtered.length === 0 ? (
-              <div
-                style={{
-                  padding: '14px',
-                  color: '#555',
-                  fontStyle: 'italic',
-                  fontSize: '0.85rem',
-                  textAlign: 'center',
-                }}
-              >
-                {search ? 'Aucun projet trouvé' : 'Aucun projet enregistré'}
+            {isCloudBusy ? (
+              <div style={{ padding: '14px', color: '#555', fontStyle: 'italic', fontSize: '0.85rem', textAlign: 'center' }}>
+                Synchronisation Cloudflare…
+              </div>
+            ) : filteredCloud.length === 0 ? (
+              <div style={{ padding: '14px', color: '#555', fontStyle: 'italic', fontSize: '0.85rem', textAlign: 'center' }}>
+                {search ? 'Aucun projet cloud trouvé' : 'Aucun projet cloud'}
               </div>
             ) : (
-              filtered.map((p) => {
-                const isActive = p.id === currentId;
+              filteredCloud.map((project) => {
+                const isActive = project.id === currentId;
                 return (
                   <div
-                    key={p.id}
+                    key={project.id}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -258,19 +289,10 @@ const ProjectDropdown: React.FC = () => {
                       gap: '8px',
                       transition: 'background 0.1s',
                     }}
-                    onMouseEnter={(e) => {
-                      if (!isActive)
-                        (e.currentTarget as HTMLDivElement).style.backgroundColor = '#2a2a2a';
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!isActive)
-                        (e.currentTarget as HTMLDivElement).style.backgroundColor = 'transparent';
-                    }}
                   >
-                    {/* Click to switch */}
                     <div
                       style={{ flex: 1, overflow: 'hidden' }}
-                      onClick={() => openProject(p.id)}
+                      onClick={() => void openCloudProject(project.id)}
                     >
                       <div
                         style={{
@@ -282,10 +304,10 @@ const ProjectDropdown: React.FC = () => {
                           whiteSpace: 'nowrap',
                         }}
                       >
-                        {p.title}
+                        {project.title}
                       </div>
                       <div style={{ fontSize: '0.72rem', color: '#666', marginTop: '2px' }}>
-                        {new Date(p.updatedAt).toLocaleDateString('fr-FR', {
+                        {new Date(project.updated_at).toLocaleDateString('fr-FR', {
                           day: '2-digit',
                           month: 'short',
                           year: 'numeric',
@@ -295,21 +317,21 @@ const ProjectDropdown: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Delete button */}
                     {!isActive && (
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (confirm(`Supprimer "${p.title}" ?`)) {
-                            deleteProject(p.id);
-                            refreshList();
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          if (confirm(`Supprimer "${project.title}" du cloud ?`)) {
+                            void deleteCloudProject(project.id).then(refreshCloudList).catch((error) => {
+                              setSyncStatus(error instanceof Error ? error.message : 'Suppression cloud impossible');
+                            });
                           }
                         }}
-                        title="Supprimer ce projet"
+                        title="Supprimer ce projet cloud"
                         style={{
                           background: 'none',
                           border: 'none',
-                          color: '#555',
+                          color: '#777',
                           cursor: 'pointer',
                           fontSize: '0.85rem',
                           padding: '2px 4px',
@@ -326,8 +348,7 @@ const ProjectDropdown: React.FC = () => {
             )}
           </div>
 
-          {/* Footer: New project */}
-          <div style={{ borderTop: '1px solid #333', padding: '8px 10px' }}>
+          <div style={{ borderTop: '1px solid #333', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <button
               onClick={createAndOpen}
               style={{
@@ -339,18 +360,7 @@ const ProjectDropdown: React.FC = () => {
                 borderRadius: '5px',
                 cursor: 'pointer',
                 fontSize: '0.85rem',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '6px',
-                transition: 'background 0.15s',
               }}
-              onMouseEnter={(e) =>
-                ((e.currentTarget as HTMLButtonElement).style.backgroundColor = '#2d2d2d')
-              }
-              onMouseLeave={(e) =>
-                ((e.currentTarget as HTMLButtonElement).style.backgroundColor = '#252526')
-              }
             >
               ＋ Nouveau projet
             </button>

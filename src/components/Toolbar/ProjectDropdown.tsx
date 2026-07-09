@@ -12,6 +12,61 @@ import { uploadProjectAssetsToR2 } from '../../services/projectAssetUpload';
 import { useProjectStore } from '../../state/projectStore';
 import type { Project } from '../../models/Project';
 
+const ProjectViewerLink: React.FC<{ projectId: string }> = ({ projectId }) => {
+  const [copied, setCopied] = useState(false);
+  const url = createViewerUrl(projectId);
+
+  const handleOpen = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    window.open(url, '_blank', 'noopener');
+  };
+
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px' }}>
+      <span
+        onClick={handleOpen}
+        title={url}
+        style={{
+          flex: 1,
+          minWidth: 0,
+          fontSize: '0.7rem',
+          color: '#2196f3',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          cursor: 'pointer',
+          textDecoration: 'underline',
+        }}
+      >
+        {url.replace(/^https?:\/\//, '')}
+      </span>
+      <button
+        onClick={handleCopy}
+        title="Copier le lien de la visonneuse"
+        style={{
+          background: 'none',
+          border: 'none',
+          color: copied ? '#4caf50' : '#888',
+          cursor: 'pointer',
+          fontSize: '0.78rem',
+          padding: '0 2px',
+          flexShrink: 0,
+        }}
+      >
+        {copied ? '✓' : '📋'}
+      </button>
+    </div>
+  );
+};
+
 const ProjectDropdown: React.FC = () => {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -306,6 +361,7 @@ const ProjectDropdown: React.FC = () => {
                       >
                         {project.title}
                       </div>
+                      <ProjectViewerLink projectId={project.id} />
                       <div style={{ fontSize: '0.72rem', color: '#666', marginTop: '2px' }}>
                         {new Date(project.updated_at).toLocaleDateString('fr-FR', {
                           day: '2-digit',

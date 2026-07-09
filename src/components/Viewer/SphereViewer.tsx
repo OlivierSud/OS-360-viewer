@@ -25,12 +25,25 @@ const SphereViewer: React.FC = () => {
   const scenes = useProjectStore((state) => state.scenes);
   const isAddingHotspot = useProjectStore((state) => state.isAddingHotspot);
   const setIsAddingHotspot = useProjectStore((state) => state.setIsAddingHotspot);
+  const mode = useProjectStore((state) => state.mode);
 
   const selectedScene = scenes.find(s => s.id === selectedSceneId);
 
   // Which hotspot popup is currently open (rendered as an in-sphere marker)
   const [openHotspotId, setOpenHotspotId] = useState<string | null>(null);
   const [isMovingHotspot, setIsMovingHotspot] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const toggleMoveMode = () => {
+    if (isMovingHotspot) {
+      setIsMovingHotspot(false);
+      setIsDragging(false);
+      useProjectStore.getState().selectHotspot(null);
+    } else {
+      setIsMovingHotspot(true);
+      setIsDragging(false);
+    }
+  };
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -42,6 +55,8 @@ const SphereViewer: React.FC = () => {
         plugins: [[MarkersPlugin, {}]]
       });
 
+      const markersPlugin = viewerRef.current.getPlugin(MarkersPlugin) as any;
+
       viewerRef.current.addEventListener('position-updated', (e: any) => {
         const yaw = e.position?.yaw ?? e.args?.[0]?.yaw;
         if (yaw !== undefined) {
@@ -49,7 +64,7 @@ const SphereViewer: React.FC = () => {
         }
       });
 
-      // Click on sphere to add or move hotspot
+      // Click on sphere to add hotspot
       viewerRef.current.addEventListener('click', (e: any) => {
         const state = useProjectStore.getState();
         if (state.isAddingHotspot && state.selectedSceneId) {
@@ -64,25 +79,40 @@ const SphereViewer: React.FC = () => {
           state.selectHotspot(newHotspot.id);
           state.setIsAddingHotspot(false);
         }
-
-        if ((window as any).__isMovingHotspot && state.selectedSceneId && state.selectedHotspotId) {
-          state.updateHotspot(state.selectedSceneId, state.selectedHotspotId, {
-            yaw: e.data.yaw,
-            pitch: e.data.pitch,
-          });
-          setOpenHotspotId(state.selectedHotspotId);
-          (window as any).__setIsMovingHotspot?.(false);
-        }
+      });
+      
+      // Handle drag movement for moving hotspots directly on the sphere
+      viewerRef.current.addEventListener('mousemove', (e: any) => {
+        // Handled globally via pointer events
       });
 
       // Navigation link clicks via markers plugin
-      const markersPlugin = viewerRef.current.getPlugin(MarkersPlugin) as any;
       markersPlugin.addEventListener('select-marker', (e: any) => {
+        const moving = useProjectStore.getState().isMovingHotspot;
+        if (moving) {
+          const hotspotId = e.marker.data?.hotspotId;
+          if (hotspotId) useProjectStore.getState().selectHotspot(hotspotId);
+          e.preventDefault();
+          return;
+        }
+
         const targetId = e.marker.data?.target;
         if (targetId) {
           useProjectStore.getState().selectScene(targetId);
+        } else {
+          const hotspotId = e.marker.data?.hotspotId;
+          if (hotspotId) {
+            window.openPSVHotspot(hotspotId);
+          }
         }
       });
+
+      markersPlugin.addEventListener('unselect-marker', (e: any) => {
+        if (useProjectStore.getState().isMovingHotspot) {
+          e.preventDefault();
+        }
+      });
+
     }
 
     return () => {
@@ -98,7 +128,7 @@ const SphereViewer: React.FC = () => {
     if (viewerRef.current && selectedScene?.image) {
       setOpenHotspotId(null);
       viewerRef.current.setPanorama(selectedScene.image).catch(err => {
-        console.error('Failed to set panorama:', err);
+        console.error('Failed to set panorama for URL:', selectedScene.image, err);
       });
     }
   }, [selectedScene?.image]);
@@ -112,6 +142,17 @@ const SphereViewer: React.FC = () => {
     markersPlugin.clearMarkers();
 
     // --- Global callbacks called from inside marker HTML ---
+
+    markersPlugin.addEventListener('stop-dragging', (e: any) => {
+      if (!isMovingHotspot) return;
+      const hotspotId = e.marker.data?.hotspotId;
+      if (hotspotId) {
+        useProjectStore.getState().updateHotspot(selectedScene!.id, hotspotId, {
+          yaw: e.marker.position.yaw,
+          pitch: e.marker.position.pitch,
+        });
+      }
+    });
 
     (window as any).selectPSVScene = (targetId: string) => {
       useProjectStore.getState().selectScene(targetId);
@@ -159,7 +200,8 @@ const SphereViewer: React.FC = () => {
     if (selectedScene?.hotspots) {
       selectedScene.hotspots.forEach((hotspot) => {
         const isOpen = hotspot.id === openHotspotId;
-        const icon = hotspot.type === 'video' ? 'ðŸŽ¥' : hotspot.type === 'image' ? 'ðŸ–¼ï¸' : 'â„¹ï¸';
+        const isSelectedMove = isMovingHotspot && hotspot.id === selectedHotspotId;
+        const icon = hotspot.type === 'video' ? '🎥' : hotspot.type === 'image' ? '🖼️' : 'ℹ️';
         const accentColor = hotspot.type === 'video' ? '#e50914' : hotspot.type === 'image' ? '#6a0dad' : '#007acc';
         const embedUrl = hotspot.type === 'video' ? getYoutubeEmbedUrl(hotspot.content) : null;
 
@@ -167,33 +209,38 @@ const SphereViewer: React.FC = () => {
         markersPlugin.addMarker({
           id: hotspot.id,
           position: { yaw: hotspot.yaw, pitch: hotspot.pitch },
+          draggable: false, // Disabling Photo-Sphere-Viewer native dragging as we handle it ourselves
           html: `
             <div
+              id="marker-${hotspot.id}"
+              class="psv-hotspot-marker"
+              data-hotspot-id="${hotspot.id}"
               style="
                 width:34px;height:34px;
                 background:${accentColor};
                 color:white;border:2.5px solid white;
                 border-radius:50%;display:flex;align-items:center;justify-content:center;
                 font-size:16px;box-shadow:0 2px 10px rgba(0,0,0,0.55);
-                cursor:pointer;user-select:none;
+                cursor:${isMovingHotspot ? (isSelectedMove ? 'crosshair' : 'grab') : 'pointer'};
+                user-select:none;
                 transition: transform 0.15s;
                 ${isOpen ? 'outline: 2px solid white; outline-offset: 2px;' : ''}
               "
-              onclick="window.openPSVHotspot('${hotspot.id}')"
             >${icon}</div>
           `,
           data: { hotspotId: hotspot.id }
         });
 
-        // Popup card marker â€” placed slightly above the icon in spherical space
+        // Hotspot popup â€” placed slightly above the icon in spherical space
         if (isOpen) {
-          const popupW = hotspot.type === 'video' ? 300 : hotspot.type === 'image' ? 280 : 240;
+          const popupW = 300;
           // pitch offset: ~0.22 rad above so the card floats above the icon
           const popupPitch = hotspot.pitch + 0.22;
 
           let contentHtml = '';
           if (hotspot.type === 'video') {
             if (embedUrl) {
+              // YouTube Video
               contentHtml = `
                 <div style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;border-radius:6px;margin-top:2px;">
                   <iframe
@@ -205,7 +252,19 @@ const SphereViewer: React.FC = () => {
                 </div>
               `;
             } else {
-              contentHtml = `<p style="margin:0;font-size:0.82rem;color:#888;font-style:italic;">URL YouTube invalide. Ã‰ditez dans le panneau de droite.</p>`;
+              // Local/Direct Video
+              contentHtml = `
+                <div style="margin-top:2px; border-radius:6px; overflow:hidden; background:#000;">
+                  <video
+                    src="${hotspot.content}"
+                    controls
+                    autoplay
+                    style="width:100%; display:block;"
+                  >
+                    Your browser does not support the video tag.
+                  </video>
+                </div>
+              `;
             }
           } else if (hotspot.type === 'image') {
             if (hotspot.content) {
@@ -221,7 +280,7 @@ const SphereViewer: React.FC = () => {
                 </div>
               `;
             } else {
-              contentHtml = `<p style="margin:0;font-size:0.82rem;color:#888;font-style:italic;">Aucune image configurÃ©e. Ã‰ditez dans le panneau de droite.</p>`;
+              contentHtml = `<p style="margin:0;font-size:0.82rem;color:#888;font-style:italic;">Aucune image configurée. Éditez dans le panneau de droite.</p>`;
             }
           } else {
             // Escape HTML entities in text content
@@ -247,14 +306,16 @@ const SphereViewer: React.FC = () => {
                 position:relative;
                 font-family: system-ui, sans-serif;
               ">
-                <div style="display:flex;justify-content:space-between;align-items:center;">
-                  <span style="font-size:0.7rem;font-weight:600;color:#999;letter-spacing:0.06em;text-transform:uppercase;">
-                    ${hotspot.type === 'video' ? 'ðŸŽ¥ VidÃ©o' : hotspot.type === 'image' ? 'ðŸ–¼ï¸ Image' : 'â„¹ï¸ Info'}
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                  <span style="font-size:0.92rem;font-weight:600;color:#fff;">
+                    ${hotspot.title
+                      ? hotspot.title.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+                      : (hotspot.type === 'video' ? '🎥 Vidéo' : hotspot.type === 'image' ? '🖼️ Image' : 'ℹ️ Info')}
                   </span>
                   <button
                     onclick="window.closePSVHotspot()"
-                    style="background:none;border:none;color:#666;font-size:0.9rem;cursor:pointer;padding:2px 5px;border-radius:3px;line-height:1;"
-                  >âœ•</button>
+                    style="background:none;border:none;color:#666;font-size:1rem;cursor:pointer;padding:2px 5px;border-radius:3px;line-height:1;flex-shrink:0;"
+                  >✕</button>
                 </div>
                 ${contentHtml}
                 <!-- Triangle pointer toward the icon below -->
@@ -277,17 +338,96 @@ const SphereViewer: React.FC = () => {
   useEffect(() => {
     if (!containerRef.current) return;
 
-    const cursor = isAddingHotspot || isMovingHotspot ? addHotspotCursor : '';
+    const cursor =
+      isAddingHotspot || (isMovingHotspot && selectedHotspotId)
+        ? addHotspotCursor
+        : '';
     containerRef.current.style.cursor = cursor;
     containerRef.current.querySelectorAll<HTMLElement>('*').forEach((element) => {
       element.style.cursor = cursor;
     });
-  }, [addHotspotCursor, isAddingHotspot, isMovingHotspot]);
+  }, [addHotspotCursor, isAddingHotspot, isMovingHotspot, selectedHotspotId]);
+
+  // Manage drag and drop using pointer events globally inside the viewer
+  useEffect(() => {
+    if (!viewerRef.current) return;
+    const container = containerRef.current;
+    if (!container) return;
+
+    let dragHotspotId: string | null = null;
+
+    const handlePointerDown = (e: PointerEvent) => {
+      const target = e.target as HTMLElement;
+      // When pointer-events: none is active, we check the element or look for a marker container
+      const markerEl = target.closest('.psv-marker');
+      if (markerEl) {
+        // Find the hotspot-marker container inside
+        const innerEl = markerEl.querySelector('.psv-hotspot-marker');
+        if (innerEl) {
+          const hotspotId = innerEl.getAttribute('data-hotspot-id');
+          if (hotspotId) {
+            // Only allow dragging if we are in moving mode
+            if (isMovingHotspot) {
+              dragHotspotId = hotspotId;
+              useProjectStore.getState().selectHotspot(hotspotId);
+              container.style.cursor = 'grabbing';
+              e.preventDefault();
+              e.stopPropagation();
+            }
+          }
+        }
+      }
+    };
+
+    const handlePointerMove = (e: PointerEvent) => {
+      if (!isMovingHotspot || !dragHotspotId) return;
+      const state = useProjectStore.getState();
+      if (!state.selectedSceneId) return;
+
+      const rect = container.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      // Convert viewport/pixel coordinates inside container to spherical positions
+      const spherical = viewerRef.current?.dataHelper.viewerCoordsToSphericalCoords({ x, y });
+      if (spherical) {
+        state.updateHotspot(state.selectedSceneId, dragHotspotId, {
+          yaw: spherical.yaw,
+          pitch: spherical.pitch,
+        });
+      }
+      e.preventDefault();
+      e.stopPropagation();
+    };
+
+    const handlePointerUp = () => {
+      if (dragHotspotId) {
+        dragHotspotId = null;
+        container.style.cursor = isMovingHotspot ? addHotspotCursor : '';
+      }
+    };
+
+    container.addEventListener('pointerdown', handlePointerDown, true);
+    window.addEventListener('pointermove', handlePointerMove, true);
+    window.addEventListener('pointerup', handlePointerUp, true);
+
+    return () => {
+      container.removeEventListener('pointerdown', handlePointerDown, true);
+      window.removeEventListener('pointermove', handlePointerMove, true);
+      window.removeEventListener('pointerup', handlePointerUp, true);
+    };
+  }, [isMovingHotspot, addHotspotCursor]);
 
   useEffect(() => {
+    // We bind local state to window context or other stores if needed
     (window as any).__isMovingHotspot = isMovingHotspot;
     (window as any).__setIsMovingHotspot = setIsMovingHotspot;
-  }, [isMovingHotspot]);
+    
+    // Auto-select the currently active hotspot in store if we enter move mode
+    if (isMovingHotspot && selectedHotspotId) {
+      // already selected
+    }
+  }, [isMovingHotspot, selectedHotspotId]);
 
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
@@ -301,8 +441,8 @@ const SphereViewer: React.FC = () => {
         }}
       />
 
-      {/* Hotspot floating tools */}
-      {selectedSceneId && (
+      {/* Hotspot floating tools (editor only) */}
+      {selectedSceneId && mode === 'editor' && (
         <div style={{ position: 'absolute', top: '15px', right: '15px', zIndex: 1000, display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <button
             onClick={() => {
@@ -327,20 +467,15 @@ const SphereViewer: React.FC = () => {
             {isAddingHotspot ? '❌ Cancel' : '➕ Add Hotspot'}
           </button>
           <button
-            onClick={() => {
-              setIsMovingHotspot(!isMovingHotspot);
-              setIsAddingHotspot(false);
-            }}
-            disabled={!selectedHotspotId}
-            title={selectedHotspotId ? 'Cliquer dans le panorama pour déplacer le hotspot sélectionné' : 'Sélectionnez un hotspot à déplacer'}
+            onClick={toggleMoveMode}
             style={{
               padding: '8px 14px',
-              backgroundColor: isMovingHotspot ? '#d32f2f' : '#252526',
-              color: selectedHotspotId ? 'white' : '#777',
+              backgroundColor: isMovingHotspot ? '#2e7d32' : '#252526',
+              color: 'white',
               border: '1px solid #3d3d3d',
               borderRadius: '4px',
               boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
-              cursor: selectedHotspotId ? 'pointer' : 'not-allowed',
+              cursor: 'pointer',
               fontSize: '0.85rem',
               display: 'flex',
               alignItems: 'center',
@@ -348,7 +483,7 @@ const SphereViewer: React.FC = () => {
               transition: 'background-color 0.2s'
             }}
           >
-            {isMovingHotspot ? '❌ Cancel Move' : '⭕ Move Hotspot'}
+            {isMovingHotspot ? '✅ Validate Positions' : '⭕ Move Hotspot'}
           </button>
         </div>
       )}    </div>

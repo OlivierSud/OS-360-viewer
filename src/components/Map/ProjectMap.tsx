@@ -27,6 +27,7 @@ const ProjectMap: React.FC = () => {
   const updateScene = useProjectStore((state) => state.updateScene);
   const addLink = useProjectStore((state) => state.addLink);
   const removeLink = useProjectStore((state) => state.removeLink);
+  const mode = useProjectStore((state) => state.mode);
   
   const [isPlacing, setIsPlacing] = useState(false);
   const [isMoving, setIsMoving] = useState(false);
@@ -364,6 +365,7 @@ const ProjectMap: React.FC = () => {
             }))}
           </MapContainer>
 
+          {mode === 'editor' &&
           <div style={{ position: 'absolute', top: 90, left: 10, zIndex: 1000, display: 'flex', flexDirection: 'column', gap: '6px' }}>
             {!isMoving && !isRotating && !isLinking && (
               <button 
@@ -443,17 +445,17 @@ const ProjectMap: React.FC = () => {
               onChange={handleSceneFileChange} 
             />
           </div>
+          }
         </div>
       ) : isGeographicMap ? (
-        // Mode 2: Carte Réelle (GPS)
         <div 
           className={isPlacing ? 'placing-mode' : ''} 
           style={{ width: '100%', height: '100%', position: 'relative' }}
         >
-          <MapContainer 
-            key="geo-map" 
-            center={[48.8566, 2.3522]} // Paris par défaut
-            zoom={13} 
+          <MapContainer
+            key="geo-map"
+            center={[48.8566, 2.3522]}
+            zoom={13}
             style={{ height: '100%', width: '100%' }}
           >
             <MapEvents />
@@ -462,9 +464,9 @@ const ProjectMap: React.FC = () => {
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
             {scenes.map(scene => (
-              <Marker 
-                key={scene.id} 
-                position={[scene.position.y, scene.position.x]} 
+              <Marker
+                key={scene.id}
+                position={[scene.position.y, scene.position.x]}
                 icon={renderMarkerIcon(scene)}
                 draggable={isMoving}
                 eventHandlers={{ 
@@ -529,6 +531,7 @@ const ProjectMap: React.FC = () => {
             }))}
           </MapContainer>
 
+          {mode === 'editor' &&
           <div style={{ position: 'absolute', top: 90, left: 10, zIndex: 1000, display: 'flex', flexDirection: 'column', gap: '6px' }}>
             {!isMoving && !isRotating && !isLinking && (
               <button 
@@ -608,9 +611,9 @@ const ProjectMap: React.FC = () => {
               onChange={handleSceneFileChange} 
             />
           </div>
+          }
         </div>
       ) : (
-        // Mode Initial: Choix de la carte
         <div style={{ 
           height: '100%', 
           width: '100%', 

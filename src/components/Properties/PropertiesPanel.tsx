@@ -516,6 +516,16 @@ const HotspotPropertiesPanel: React.FC = () => {
                   </select>
                 </Field>
 
+                <Field label="Titre (optionnel)">
+                  <input
+                    type="text"
+                    value={selectedHotspot.title ?? ''}
+                    onChange={(e) => updateHotspot(selectedScene.id, selectedHotspot.id, { title: e.target.value })}
+                    placeholder="Titre affiché dans la bulle"
+                    style={inputStyle}
+                  />
+                </Field>
+
                 <Field label={selectedHotspot.type === 'video' ? 'Vidéo' : selectedHotspot.type === 'image' ? "Image" : 'Contenu Texte'}>
                   {selectedHotspot.type === 'video' ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>

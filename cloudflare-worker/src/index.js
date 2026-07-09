@@ -106,15 +106,23 @@ export default {
     const matchAsset = path.match(/^\/assets\/(.+)$/);
     if (request.method === 'GET' && matchAsset) {
       const key = matchAsset[1].split('/').map(decodeURIComponent).join('/');
-      const object = await env.ASSETS.get(key);
-      if (!object) return error('Asset not found', 404, origin);
 
-      const headers = new Headers(corsHeaders(origin));
-      object.writeHttpMetadata(headers);
-      headers.set('Cache-Control', 'public, max-age=31536000, immutable');
-      headers.set('ETag', object.httpEtag);
+      try {
+        const object = await env.ASSETS.get(key);
+        
+        if (!object) {
+          return error('Asset not found', 404, origin);
+        }
 
-      return new Response(object.body, { headers });
+        const headers = new Headers(corsHeaders(origin));
+        object.writeHttpMetadata(headers);
+        headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+        headers.set('ETag', object.httpEtag);
+
+        return new Response(object.body, { headers });
+      } catch (e) {
+        return error(`R2 access error: ${e.message}`, 500, origin);
+      }
     }
 
     // ── POST /api/upload/:folder/:filename — upload asset to R2 ───────────

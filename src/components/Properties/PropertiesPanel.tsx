@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { useProjectStore } from '../../state/projectStore';
-import { createViewerUrl, deleteCloudProject } from '../../services/cloudflareApi';
+import { deleteCloudProject } from '../../services/cloudflareApi';
+import { getViewerUrlForCurrentProject } from '../../services/projectCloudSave';
 import { createTrackedObjectUrl } from '../../services/mediaRegistry';
 import { createProjectId } from '../../storage/projectRegistry';
 import type { Project } from '../../models/Project';
@@ -56,13 +57,35 @@ const ProjectSettingsPanel: React.FC = () => {
     setProject({ ...project, project: { ...meta, ...updates } });
   };
 
-  const viewerUrl = currentProjectId
-    ? createViewerUrl(currentProjectId)
-    : null;
+  const [viewerUrl, setViewerUrl] = useState<string | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
 
-  const handleCopy = () => {
-    if (viewerUrl) {
-      navigator.clipboard.writeText(viewerUrl).then(() => {
+  // Ensure the project (with all media uploaded to R2) is saved before sharing,
+  // so the link always points to valid cloud data.
+  const ensureViewerUrl = async (): Promise<string | null> => {
+    setIsSyncing(true);
+    try {
+      const url = await getViewerUrlForCurrentProject();
+      setViewerUrl(url);
+      return url;
+    } catch {
+      return null;
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const resolveUrl = async (): Promise<string | null> => {
+    if (viewerUrl) return viewerUrl;
+    // Always save (uploading any local blob assets to R2) so the link points
+    // to valid cloud data, even for a project already opened from the cloud.
+    return ensureViewerUrl();
+  };
+
+  const handleCopy = async () => {
+    const url = await resolveUrl();
+    if (url) {
+      navigator.clipboard.writeText(url).then(() => {
         setCopied(true);
         setTimeout(() => setCopied(false), 1800);
       });
@@ -257,19 +280,28 @@ const ProjectSettingsPanel: React.FC = () => {
 
         {viewerUrl ? (
           <div style={{ display: 'flex', gap: '6px' }}>
-            <input
-              readOnly
-              value={viewerUrl}
+            <a
+              href={viewerUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Ouvrir la visioneuse"
               style={{
                 ...inputStyle,
                 color: '#888',
                 fontSize: '0.78rem',
-                cursor: 'text',
+                cursor: 'pointer',
                 flex: 1,
                 minWidth: 0,
+                textDecoration: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
               }}
-              onClick={(e) => (e.target as HTMLInputElement).select()}
-            />
+            >
+              {viewerUrl}
+            </a>
             <button
               onClick={handleCopy}
               title="Copier le lien"
@@ -290,9 +322,23 @@ const ProjectSettingsPanel: React.FC = () => {
             </button>
           </div>
         ) : (
-          <div style={{ fontSize: '0.8rem', color: '#555', fontStyle: 'italic' }}>
-            Sauvegardez le projet d'abord pour générer le lien.
-          </div>
+          <button
+            onClick={handleCopy}
+            disabled={isSyncing}
+            title="Enregistrer le projet et générer le lien"
+            style={{
+              padding: '8px 10px',
+              background: '#252526',
+              border: '1px solid #444',
+              borderRadius: '5px',
+              color: isSyncing ? '#666' : '#4caf50',
+              cursor: isSyncing ? 'default' : 'pointer',
+              fontSize: '0.82rem',
+              textAlign: 'left',
+            }}
+          >
+            {isSyncing ? '⏳ Enregistrement…' : '🔗 Générer le lien de partage'}
+          </button>
         )}
 
         <div style={{ fontSize: '0.75rem', color: '#444', lineHeight: 1.5 }}>

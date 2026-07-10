@@ -45,16 +45,32 @@ const ViewerPage: React.FC = () => {
       return;
     }
 
+    let cancelled = false;
     setStatus('loading');
-    loadCloudProject(projectId)
-      .then((record) => {
+
+    const loadWithRetry = async (attempt = 1): Promise<void> => {
+      try {
+        const record = await loadCloudProject(projectId);
+        if (cancelled) return;
         setProject(record.project_data);
         selectScene(record.project_data.project.defaultScene ?? record.project_data.scenes[0]?.id ?? null);
         setStatus('ready');
-      })
-      .catch(() => {
-        setStatus('error');
-      });
+      } catch (err) {
+        if (cancelled) return;
+        if (attempt < 3) {
+          // Transient "Failed to fetch" can happen on first load; retry shortly.
+          setTimeout(() => void loadWithRetry(attempt + 1), 500 * attempt);
+        } else {
+          console.error('Failed to load cloud project', projectId, err);
+          setStatus('error');
+        }
+      }
+    };
+
+    void loadWithRetry();
+    return () => {
+      cancelled = true;
+    };
   }, [searchParams, selectScene, setProject]);
 
   return (

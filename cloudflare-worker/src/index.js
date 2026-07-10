@@ -98,6 +98,22 @@ export default {
     const matchDel = path.match(/^\/api\/projects\/([^/]+)$/);
     if (request.method === 'DELETE' && matchDel) {
       const id = matchDel[1];
+
+      // Remove all R2 assets uploaded for this project (projects/:id/...)
+      try {
+        const prefix = `projects/${id}/`;
+        let cursor;
+        do {
+          const listed = await env.ASSETS.list({ prefix, cursor });
+          if (listed.objects.length > 0) {
+            await Promise.all(listed.objects.map((obj) => env.ASSETS.delete(obj.key)));
+          }
+          cursor = listed.truncated ? listed.cursor : undefined;
+        } while (cursor);
+      } catch (e) {
+        console.error('R2 cleanup failed for', id, e);
+      }
+
       await env.DB.prepare('DELETE FROM projects WHERE id = ?').bind(id).run();
       return json({ ok: true }, 200, origin);
     }

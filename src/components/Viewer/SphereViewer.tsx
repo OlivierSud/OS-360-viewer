@@ -33,6 +33,7 @@ const mode = useProjectStore((state) => state.mode);
 
   // Which hotspot popup is currently open (rendered as an in-sphere marker)
   const [openHotspotId, setOpenHotspotId] = useState<string | null>(null);
+  const [panoramaError, setPanoramaError] = useState<string | null>(null);
 
   const toggleMoveMode = () => {
     if (isMovingHotspot) {
@@ -121,8 +122,10 @@ const mode = useProjectStore((state) => state.mode);
   useEffect(() => {
     if (viewerRef.current && selectedScene?.image) {
       setOpenHotspotId(null);
+      setPanoramaError(null);
       viewerRef.current.setPanorama(selectedScene.image).catch(err => {
         console.error('Failed to set panorama for URL:', selectedScene.image, err);
+        setPanoramaError(selectedScene.image);
       });
     }
   }, [selectedScene?.image]);
@@ -434,6 +437,33 @@ const mode = useProjectStore((state) => state.mode);
           cursor: isAddingHotspot || isMovingHotspot ? addHotspotCursor : undefined,
         }}
       />
+
+      {panoramaError && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 2000,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '10px',
+            background: 'rgba(0,0,0,0.85)',
+            color: '#ffcdd2',
+            fontSize: '0.95rem',
+            fontFamily: 'system-ui, sans-serif',
+            textAlign: 'center',
+            padding: '24px',
+          }}
+        >
+          <span style={{ fontSize: '2rem' }}>⚠️</span>
+          <span>Le panorama n'a pas pu être chargé.</span>
+          <span style={{ fontSize: '0.75rem', color: '#888', wordBreak: 'break-all', maxWidth: '90%' }}>
+            {panoramaError}
+          </span>
+        </div>
+      )}
 
       {/* Hotspot floating tools (editor only) */}
       {selectedSceneId && mode === 'editor' && (

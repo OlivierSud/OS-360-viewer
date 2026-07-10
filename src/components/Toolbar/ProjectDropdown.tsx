@@ -16,11 +16,6 @@ const ProjectViewerLink: React.FC<{ projectId: string }> = ({ projectId }) => {
   const [copied, setCopied] = useState(false);
   const url = createViewerUrl(projectId);
 
-  const handleOpen = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    window.open(url, '_blank', 'noopener');
-  };
-
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation();
     navigator.clipboard.writeText(url).then(() => {
@@ -31,8 +26,11 @@ const ProjectViewerLink: React.FC<{ projectId: string }> = ({ projectId }) => {
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px' }}>
-      <span
-        onClick={handleOpen}
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}
         title={url}
         style={{
           flex: 1,
@@ -47,7 +45,7 @@ const ProjectViewerLink: React.FC<{ projectId: string }> = ({ projectId }) => {
         }}
       >
         {url.replace(/^https?:\/\//, '')}
-      </span>
+      </a>
       <button
         onClick={handleCopy}
         title="Copier le lien de la visonneuse"

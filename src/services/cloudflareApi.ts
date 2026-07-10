@@ -59,7 +59,10 @@ export function createViewerUrl(projectId: string): string {
     ? import.meta.env.BASE_URL
     : `${import.meta.env.BASE_URL}/`;
 
-  return `${window.location.origin}${basePath}viewer?id=${encodeURIComponent(projectId)}`;
+  // Always point to the deployed viewer, never the local origin
+  const PROD_VIEWER_ORIGIN = 'https://oliviersud.github.io';
+
+  return `${PROD_VIEWER_ORIGIN}${basePath}viewer?id=${encodeURIComponent(projectId)}`;
 }
 
 async function parseJsonResponse<T>(response: Response): Promise<T> {

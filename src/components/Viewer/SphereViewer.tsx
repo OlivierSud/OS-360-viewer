@@ -25,23 +25,21 @@ const SphereViewer: React.FC = () => {
   const scenes = useProjectStore((state) => state.scenes);
   const isAddingHotspot = useProjectStore((state) => state.isAddingHotspot);
   const setIsAddingHotspot = useProjectStore((state) => state.setIsAddingHotspot);
-  const mode = useProjectStore((state) => state.mode);
+const mode = useProjectStore((state) => state.mode);
+  const isMovingHotspot = useProjectStore((state) => state.isMovingHotspot);
+  const setIsMovingHotspot = useProjectStore((state) => state.setIsMovingHotspot);
 
   const selectedScene = scenes.find(s => s.id === selectedSceneId);
 
   // Which hotspot popup is currently open (rendered as an in-sphere marker)
   const [openHotspotId, setOpenHotspotId] = useState<string | null>(null);
-  const [isMovingHotspot, setIsMovingHotspot] = useState(false);
-  const [isDragging, setIsDragging] = useState(false);
 
   const toggleMoveMode = () => {
     if (isMovingHotspot) {
       setIsMovingHotspot(false);
-      setIsDragging(false);
       useProjectStore.getState().selectHotspot(null);
     } else {
       setIsMovingHotspot(true);
-      setIsDragging(false);
     }
   };
 
@@ -64,9 +62,18 @@ const SphereViewer: React.FC = () => {
         }
       });
 
-      // Click on sphere to add hotspot
+// Click on sphere to add hotspot
       viewerRef.current.addEventListener('click', (e: any) => {
         const state = useProjectStore.getState();
+        const moving = state.isMovingHotspot;
+        if (moving) {
+          const hotspotId = e.marker.data?.hotspotId;
+          if (hotspotId) state.selectHotspot(hotspotId);
+          e.preventDefault();
+          return;
+        }
+
+        // Click on empty sphere while in "Add Hotspot" mode -> create a hotspot
         if (state.isAddingHotspot && state.selectedSceneId) {
           const newHotspot: Hotspot = {
             id: 'hotspot-' + Date.now(),
@@ -76,22 +83,9 @@ const SphereViewer: React.FC = () => {
             content: 'Nouveau Hotspot'
           };
           state.addHotspot(state.selectedSceneId, newHotspot);
-          state.selectHotspot(newHotspot.id);
           state.setIsAddingHotspot(false);
-        }
-      });
-      
-      // Handle drag movement for moving hotspots directly on the sphere
-      viewerRef.current.addEventListener('mousemove', (e: any) => {
-        // Handled globally via pointer events
-      });
-
-      // Navigation link clicks via markers plugin
-      markersPlugin.addEventListener('select-marker', (e: any) => {
-        const moving = useProjectStore.getState().isMovingHotspot;
-        if (moving) {
-          const hotspotId = e.marker.data?.hotspotId;
-          if (hotspotId) useProjectStore.getState().selectHotspot(hotspotId);
+          state.selectHotspot(newHotspot.id);
+          setOpenHotspotId(newHotspot.id);
           e.preventDefault();
           return;
         }
@@ -102,7 +96,7 @@ const SphereViewer: React.FC = () => {
         } else {
           const hotspotId = e.marker.data?.hotspotId;
           if (hotspotId) {
-            window.openPSVHotspot(hotspotId);
+            (window as any).openPSVHotspot(hotspotId);
           }
         }
       });

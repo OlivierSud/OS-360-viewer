@@ -10,13 +10,42 @@ const FitBounds: React.FC<{ bounds: L.LatLngBoundsExpression }> = ({ bounds }) =
   const map = useMap();
   useEffect(() => {
     map.fitBounds(bounds, { padding: [10, 10] });
+    // Prevent zooming out beyond the point where the whole plan fits the view
+    const fitZoom = map.getBoundsZoom(bounds, false);
+    map.setMinZoom(fitZoom);
+    map.setMaxZoom(Math.max(2, fitZoom + 4));
   }, [map, bounds]);
+  return null;
+};
+
+const MapRefBridge: React.FC<{ mapRef: React.MutableRefObject<L.Map | null> }> = ({ mapRef }) => {
+  mapRef.current = useMap();
+  return null;
+};
+
+const CenterOnSelected: React.FC = () => {
+  const map = useMap();
+  const selectedSceneId = useProjectStore((state) => state.selectedSceneId);
+
+  useEffect(() => {
+    if (!selectedSceneId) return;
+    const scene = useProjectStore.getState().scenes.find(s => s.id === selectedSceneId);
+    if (scene) {
+      map.panTo([scene.position.y, scene.position.x]);
+    }
+  }, [map, selectedSceneId]);
+
   return null;
 };
 
 
 
-const ProjectMap: React.FC = () => {
+interface ProjectMapProps {
+  mapRef?: React.MutableRefObject<L.Map | null>;
+  hideZoomControl?: boolean;
+}
+
+const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl }) => {
   const project = useProjectStore((state) => state.project);
   const scenes = useProjectStore((state) => state.scenes);
   const setMapConfig = useProjectStore((state) => state.setMapConfig);
@@ -289,10 +318,13 @@ const ProjectMap: React.FC = () => {
             bounds={bounds}
             style={{ height: '100%', width: '100%' }}
             maxZoom={2}
-            minZoom={-2}
+            minZoom={0}
+            zoomControl={!hideZoomControl}
           >
+            {mapRef && <MapRefBridge mapRef={mapRef} />}
             <MapEvents />
             <FitBounds bounds={bounds} />
+            <CenterOnSelected />
             <ImageOverlay
               url={mapConfig.image!}
               bounds={bounds}
@@ -456,9 +488,13 @@ const ProjectMap: React.FC = () => {
             key="geo-map"
             center={[48.8566, 2.3522]}
             zoom={13}
+            minZoom={1}
             style={{ height: '100%', width: '100%' }}
+            zoomControl={!hideZoomControl}
           >
+            {mapRef && <MapRefBridge mapRef={mapRef} />}
             <MapEvents />
+            <CenterOnSelected />
             <TileLayer
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -614,40 +650,56 @@ const ProjectMap: React.FC = () => {
           }
         </div>
       ) : (
-        <div style={{ 
-          height: '100%', 
-          width: '100%', 
-          display: 'flex', 
-          flexDirection: 'column', 
-          alignItems: 'center', 
-          justifyContent: 'center', 
-          gap: '20px',
-          color: '#ccc',
-          background: '#1e1e1e'
-        }}>
-          <h3 style={{ margin: 0 }}>Configurer le plan de travail</h3>
-          <div style={{ display: 'flex', gap: '20px' }}>
-            <button 
-              onClick={openFileDialog}
-              style={{ padding: '15px 25px', fontSize: '1rem', cursor: 'pointer', backgroundColor: '#007acc', color: 'white', border: 'none', borderRadius: '4px' }}
-            >
-              📍 Charger un plan (Image)
-            </button>
-            <button 
-              onClick={handleUseGeographicMap}
-              style={{ padding: '15px 25px', fontSize: '1rem', cursor: 'pointer', backgroundColor: '#28a745', color: 'white', border: 'none', borderRadius: '4px' }}
-            >
-              🌍 Carte Géographique (GPS)
-            </button>
+        mode === 'editor' ? (
+          <div style={{ 
+            height: '100%', 
+            width: '100%', 
+            display: 'flex', 
+            flexDirection: 'column', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            gap: '20px',
+            color: '#ccc',
+            background: '#1e1e1e'
+          }}>
+            <h3 style={{ margin: 0 }}>Configurer le plan de travail</h3>
+            <div style={{ display: 'flex', gap: '20px' }}>
+              <button 
+                onClick={openFileDialog}
+                style={{ padding: '15px 25px', fontSize: '1rem', cursor: 'pointer', backgroundColor: '#007acc', color: 'white', border: 'none', borderRadius: '4px' }}
+              >
+                📍 Charger un plan (Image)
+              </button>
+              <button 
+                onClick={handleUseGeographicMap}
+                style={{ padding: '15px 25px', fontSize: '1rem', cursor: 'pointer', backgroundColor: '#28a745', color: 'white', border: 'none', borderRadius: '4px' }}
+              >
+                🌍 Carte Géographique (GPS)
+              </button>
+            </div>
+            <input 
+              type="file" 
+              accept="image/*" 
+              ref={mapFileRef} 
+              style={{ display: 'none' }} 
+              onChange={handleFileUpload} 
+            />
           </div>
-          <input 
-            type="file" 
-            accept="image/*" 
-            ref={mapFileRef} 
-            style={{ display: 'none' }} 
-            onChange={handleFileUpload} 
-          />
-        </div>
+        ) : (
+          <div style={{ 
+            height: '100%', 
+            width: '100%', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            color: '#888',
+            background: '#1e1e1e',
+            fontSize: '0.9rem',
+            fontFamily: 'system-ui, sans-serif'
+          }}>
+            Aucun plan disponible pour cette visite.
+          </div>
+        )
       )}
     </div>
   );

@@ -290,6 +290,7 @@ const mode = useProjectStore((state) => state.mode);
           markersPlugin.addMarker({
             id: `popup-${hotspot.id}`,
             position: { yaw: hotspot.yaw, pitch: popupPitch },
+            zIndex: 1000,
             html: `
               <div style="
                 width:${popupW}px;

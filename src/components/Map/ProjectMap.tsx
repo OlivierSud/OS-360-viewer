@@ -26,8 +26,15 @@ const MapRefBridge: React.FC<{ mapRef: React.MutableRefObject<L.Map | null> }> =
 const CenterOnSelected: React.FC = () => {
   const map = useMap();
   const selectedSceneId = useProjectStore((state) => state.selectedSceneId);
+  const firstRun = useRef(true);
 
   useEffect(() => {
+    // Skip the very first selection (initial load) so the saved map center
+    // (position de départ) is not overridden by panning to the default scene.
+    if (firstRun.current) {
+      firstRun.current = false;
+      return;
+    }
     if (!selectedSceneId) return;
     const scene = useProjectStore.getState().scenes.find(s => s.id === selectedSceneId);
     if (scene) {
@@ -36,6 +43,176 @@ const CenterOnSelected: React.FC = () => {
   }, [map, selectedSceneId]);
 
   return null;
+};
+
+const GeoSearch: React.FC = () => {
+  const map = useMap();
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<{ display_name: string; lat: string; lon: string }[]>([]);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const timer = useRef<number | undefined>(undefined);
+
+  const runSearch = async (q: string) => {
+    if (!q.trim()) {
+      setResults([]);
+      setOpen(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&limit=5&q=${encodeURIComponent(q)}`,
+        { headers: { Accept: 'application/json' } }
+      );
+      const data = await res.json();
+      setResults(Array.isArray(data) ? data : []);
+      setOpen(true);
+    } catch {
+      setResults([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onType = (value: string) => {
+    setQuery(value);
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => void runSearch(value), 400);
+  };
+
+  const select = (r: { display_name: string; lat: string; lon: string }) => {
+    const lat = parseFloat(r.lat);
+    const lon = parseFloat(r.lon);
+    map.setView([lat, lon], 16);
+    const current = useProjectStore.getState().project?.map;
+    if (current) {
+      useProjectStore.getState().setMapConfig({ ...current, center: [lat, lon] });
+    }
+    setOpen(false);
+    setQuery(r.display_name.split(',')[0]);
+  };
+
+  const [fixed, setFixed] = useState(false);
+
+  const fixHere = () => {
+    const c = map.getCenter();
+    const current = useProjectStore.getState().project?.map;
+    if (current) {
+      useProjectStore.getState().setMapConfig({ ...current, center: [c.lat, c.lng] });
+    }
+    setFixed(true);
+    window.setTimeout(() => setFixed(false), 1600);
+  };
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        top: '10px',
+        left: '54px',
+        zIndex: 1100,
+        width: '300px',
+        fontFamily: 'system-ui, sans-serif',
+      }}
+    >
+      <div style={{ display: 'flex', gap: '6px' }}>
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => onType(e.target.value)}
+          onFocus={() => results.length > 0 && setOpen(true)}
+          placeholder="Rechercher un lieu…"
+          style={{
+            flex: 1,
+            minWidth: 0,
+            boxSizing: 'border-box',
+            padding: '8px 10px',
+            borderRadius: '6px',
+            border: '1px solid #3d3d3d',
+            background: 'rgba(20,20,20,0.92)',
+            color: 'white',
+            fontSize: '0.82rem',
+            outline: 'none',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
+          }}
+        />
+        <button
+          onClick={fixHere}
+          title="Fixer la position de départ sur la carte"
+          style={{
+            flexShrink: 0,
+            padding: '8px 10px',
+            borderRadius: '6px',
+            border: '1px solid #3d3d3d',
+            background: fixed ? '#2e7d32' : '#007acc',
+            color: 'white',
+            cursor: 'pointer',
+            fontSize: '1rem',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
+          }}
+        >
+          {fixed ? '✓' : '📍'}
+        </button>
+      </div>
+      {fixed && (
+        <div
+          style={{
+            marginTop: '6px',
+            padding: '5px 8px',
+            borderRadius: '6px',
+            background: 'rgba(46,125,50,0.95)',
+            color: 'white',
+            fontSize: '0.75rem',
+            textAlign: 'center',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
+          }}
+        >
+          Position de départ enregistrée ✓
+        </div>
+      )}
+      {/* ⚠️ C'est ici que se trouvait le </div> en trop qui cassait le code ! Je l'ai retiré. */}
+      {open && (loading || results.length > 0) && (
+        <div
+          style={{
+            marginTop: '4px',
+            background: '#fff',
+            color: '#111',
+            borderRadius: '6px',
+            overflow: 'hidden',
+            maxHeight: '240px',
+            overflowY: 'auto',
+            boxShadow: '0 4px 14px rgba(0,0,0,0.5)',
+            fontSize: '0.8rem',
+          }}
+        >
+          {loading && <div style={{ padding: '8px 10px', color: '#666' }}>Recherche…</div>}
+          {!loading && results.length === 0 && (
+            <div style={{ padding: '8px 10px', color: '#666' }}>Aucun résultat</div>
+          )}
+          {results.map((r, i) => (
+            <div
+              key={i}
+              onClick={() => select(r)}
+              title={r.display_name}
+              style={{
+                padding: '7px 10px',
+                cursor: 'pointer',
+                borderBottom: i < results.length - 1 ? '1px solid #eee' : 'none',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = '#f0f0f0')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = '#fff')}
+            >
+              {r.display_name}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 };
 
 
@@ -256,10 +433,8 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl }) => {
     if (isSelected) {
       html = `
         <div style="position: relative; width: 100px; height: 100px; display: flex; align-items: center; justify-content: center;">
-          <!-- Dotted Gizmo Outer Ring -->
           ${isRotateMode ? `
             <div style="position: absolute; top: 10px; left: 10px; right: 10px; bottom: 10px; border: 2px dashed #007acc; border-radius: 50%; pointer-events: none; box-shadow: 0 0 6px rgba(0,122,204,0.4); animation: rotate-dash 20s linear infinite;"></div>
-            <!-- Drag Handle Indicator on the Ring -->
             <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; transform: rotate(${angle}deg); pointer-events: none;">
               <div style="position: absolute; top: 4px; left: 50%; transform: translateX(-50%); width: 12px; height: 12px; background: #ffc107; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 4px rgba(0,0,0,0.6); cursor: row-resize;"></div>
             </div>
@@ -486,7 +661,7 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl }) => {
         >
           <MapContainer
             key="geo-map"
-            center={[48.8566, 2.3522]}
+            center={mapConfig.center ?? [48.8566, 2.3522]}
             zoom={13}
             minZoom={1}
             style={{ height: '100%', width: '100%' }}
@@ -495,6 +670,7 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl }) => {
             {mapRef && <MapRefBridge mapRef={mapRef} />}
             <MapEvents />
             <CenterOnSelected />
+            {mode === 'editor' && <GeoSearch />}
             <TileLayer
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"

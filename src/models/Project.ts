@@ -3,6 +3,7 @@ export interface MapConfig {
   image?: string;
   width?: number;
   height?: number;
+  center?: [number, number];
 }
 
 export interface ProjectMetadata {

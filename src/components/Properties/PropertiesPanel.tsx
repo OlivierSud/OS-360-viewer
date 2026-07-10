@@ -32,6 +32,17 @@ const inputStyle: React.CSSProperties = {
   fontFamily: 'system-ui, sans-serif',
 };
 
+const mapActionBtnStyle: React.CSSProperties = {
+  padding: '7px 12px',
+  backgroundColor: '#252526',
+  border: '1px solid #444',
+  borderRadius: '5px',
+  color: '#fff',
+  cursor: 'pointer',
+  fontSize: '0.82rem',
+  transition: 'background 0.15s',
+};
+
 /* ══════════════════════════════════════════════════════════
    Project Settings Panel
 ══════════════════════════════════════════════════════════ */
@@ -39,6 +50,7 @@ const ProjectSettingsPanel: React.FC = () => {
   const project = useProjectStore((s) => s.project);
   const updateProjectTitle = useProjectStore((s) => s.updateProjectTitle);
   const setProject = useProjectStore((s) => s.setProject);
+  const setMapConfig = useProjectStore((s) => s.setMapConfig);
   const setShowProjectSettings = useProjectStore((s) => s.setShowProjectSettings);
   const setCurrentProjectId = useProjectStore((s) => s.setCurrentProjectId);
   const selectScene = useProjectStore((s) => s.selectScene);
@@ -49,9 +61,25 @@ const ProjectSettingsPanel: React.FC = () => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const mapFileRef = useRef<HTMLInputElement>(null);
+
+  const handleMapFileClick = () => mapFileRef.current?.click();
+
+  const handleMapFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const url = createTrackedObjectUrl(file);
+    const img = new Image();
+    img.onload = () => {
+      setMapConfig({ type: 'custom', image: url, width: img.width, height: img.height });
+    };
+    img.src = url;
+    e.target.value = '';
+  };
 
   if (!project) return null;
   const meta = project.project;
+  const mapConfig = project.map;
 
   const updateMeta = (updates: Partial<typeof meta>) => {
     setProject({ ...project, project: { ...meta, ...updates } });
@@ -270,6 +298,77 @@ const ProjectSettingsPanel: React.FC = () => {
             style={inputStyle}
           />
         </Field>
+      </div>
+
+      {/* ── Plan de travail (map) ── */}
+      <div style={{ borderTop: '1px solid #333', paddingTop: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <div style={{ fontSize: '0.72rem', color: '#888', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+          🗺️ Plan de travail
+        </div>
+
+        {mapConfig?.type === 'custom' && mapConfig.image ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <img
+              src={mapConfig.image}
+              alt="Plan du projet"
+              style={{
+                width: '100%',
+                maxHeight: '130px',
+                objectFit: 'contain',
+                borderRadius: '6px',
+                border: '1px solid #444',
+                background: '#111',
+              }}
+            />
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+              <button
+                onClick={handleMapFileClick}
+                style={mapActionBtnStyle}
+              >
+                📁 Changer le plan
+              </button>
+              <button
+                onClick={() => setMapConfig({ type: 'geographic' })}
+                style={mapActionBtnStyle}
+              >
+                🌍 Carte GPS
+              </button>
+            </div>
+          </div>
+        ) : mapConfig?.type === 'geographic' ? (
+          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.8rem', color: '#888' }}>Carte géographique (GPS) active</span>
+            <button
+              onClick={handleMapFileClick}
+              style={mapActionBtnStyle}
+            >
+              📁 Utiliser une image
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+            <button
+              onClick={handleMapFileClick}
+              style={mapActionBtnStyle}
+            >
+              📁 Charger un plan (Image)
+            </button>
+            <button
+              onClick={() => setMapConfig({ type: 'geographic' })}
+              style={mapActionBtnStyle}
+            >
+              🌍 Carte Géographique (GPS)
+            </button>
+          </div>
+        )}
+
+        <input
+          ref={mapFileRef}
+          type="file"
+          accept="image/*"
+          style={{ display: 'none' }}
+          onChange={handleMapFileChange}
+        />
       </div>
 
       {/* ── Viewer link ── */}

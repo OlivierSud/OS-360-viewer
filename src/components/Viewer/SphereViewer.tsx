@@ -63,19 +63,20 @@ const mode = useProjectStore((state) => state.mode);
         }
       });
 
-// Click on sphere to add hotspot
+// Click on empty sphere: used for "Add Hotspot" mode (marker clicks are
+// handled separately via the MarkersPlugin 'select-marker' event).
       viewerRef.current.addEventListener('click', (e: any) => {
         const state = useProjectStore.getState();
         const moving = state.isMovingHotspot;
         if (moving) {
-          const hotspotId = e.marker.data?.hotspotId;
+          const hotspotId = e.marker?.data?.hotspotId;
           if (hotspotId) state.selectHotspot(hotspotId);
           e.preventDefault();
           return;
         }
 
         // Click on empty sphere while in "Add Hotspot" mode -> create a hotspot
-        if (state.isAddingHotspot && state.selectedSceneId) {
+        if (state.isAddingHotspot && state.selectedSceneId && !e.marker) {
           const newHotspot: Hotspot = {
             id: 'hotspot-' + Date.now(),
             type: 'text',
@@ -90,21 +91,22 @@ const mode = useProjectStore((state) => state.mode);
           e.preventDefault();
           return;
         }
-
-        const targetId = e.marker.data?.target;
-        if (targetId) {
-          useProjectStore.getState().selectScene(targetId);
-        } else {
-          const hotspotId = e.marker.data?.hotspotId;
-          if (hotspotId) {
-            (window as any).openPSVHotspot(hotspotId);
-          }
-        }
       });
 
       markersPlugin.addEventListener('unselect-marker', (e: any) => {
         if (useProjectStore.getState().isMovingHotspot) {
           e.preventDefault();
+        }
+      });
+
+      // Marker click (links + hotspots) — robust, doesn't depend on window globals
+      markersPlugin.addEventListener('select-marker', (e: any) => {
+        const data = e.marker?.data ?? {};
+        if (data.target) {
+          useProjectStore.getState().selectScene(data.target);
+        } else if (data.hotspotId) {
+          useProjectStore.getState().selectHotspot(data.hotspotId);
+          setOpenHotspotId(data.hotspotId);
         }
       });
 

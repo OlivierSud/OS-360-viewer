@@ -11,6 +11,7 @@ import {
 import { uploadProjectAssetsToR2 } from '../../services/projectAssetUpload';
 import { useProjectStore } from '../../state/projectStore';
 import type { Project } from '../../models/Project';
+import PasswordGate from '../Viewer/PasswordGate';
 
 const ProjectViewerLink: React.FC<{ projectId: string }> = ({ projectId }) => {
   const [copied, setCopied] = useState(false);
@@ -72,6 +73,7 @@ const ProjectDropdown: React.FC = () => {
   const [currentId, setCurrentIdState] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
   const [isCloudBusy, setIsCloudBusy] = useState(false);
+  const [lockedProject, setLockedProject] = useState<{ id: string; data: Project } | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -119,6 +121,11 @@ const ProjectDropdown: React.FC = () => {
     setIsCloudBusy(true);
     try {
       const record = await loadCloudProject(id);
+      // A protected project must be unlocked before it can be opened/edited.
+      if (record.project_data.project.passwordHash) {
+        setLockedProject({ id, data: record.project_data });
+        return;
+      }
       setProject(record.project_data);
       selectScene(record.project_data.project.defaultScene ?? record.project_data.scenes[0]?.id ?? null);
       setCurrentId(id);
@@ -130,6 +137,17 @@ const ProjectDropdown: React.FC = () => {
       setIsCloudBusy(false);
     }
   }, [selectScene, setCurrentId, setProject]);
+
+  const unlockLockedProject = useCallback(() => {
+    if (!lockedProject) return;
+    const { id, data } = lockedProject;
+    setProject(data);
+    selectScene(data.project.defaultScene ?? data.scenes[0]?.id ?? null);
+    setCurrentId(id);
+    setLockedProject(null);
+    setOpen(false);
+    setSyncStatus('Projet chargé depuis Cloudflare');
+  }, [lockedProject, selectScene, setCurrentId, setProject]);
 
   const handleCloudSave = useCallback(async (): Promise<string | null> => {
     if (!storeProject) return null;
@@ -347,18 +365,22 @@ const ProjectDropdown: React.FC = () => {
                       style={{ flex: 1, overflow: 'hidden' }}
                       onClick={() => void openCloudProject(project.id)}
                     >
-                      <div
-                        style={{
-                          fontWeight: isActive ? 600 : 400,
-                          fontSize: '0.88rem',
-                          color: 'white',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {project.title}
-                      </div>
+                       <div
+                         style={{
+                           fontWeight: isActive ? 600 : 400,
+                           fontSize: '0.88rem',
+                           color: 'white',
+                           overflow: 'hidden',
+                           textOverflow: 'ellipsis',
+                           whiteSpace: 'nowrap',
+                           display: 'flex',
+                           alignItems: 'center',
+                           gap: '6px',
+                         }}
+                       >
+                         {project.passwordHash ? <span title="Projet protégé par mot de passe">🔒</span> : null}
+                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{project.title}</span>
+                       </div>
                       <ProjectViewerLink projectId={project.id} />
                       <div style={{ fontSize: '0.72rem', color: '#666', marginTop: '2px' }}>
                         {new Date(project.updated_at).toLocaleDateString('fr-FR', {
@@ -420,6 +442,17 @@ const ProjectDropdown: React.FC = () => {
             </button>
           </div>
         </div>
+      )}
+
+      {lockedProject && (
+        <PasswordGate
+          expectedHash={lockedProject.data.project.passwordHash ?? ''}
+          title={lockedProject.data.project.title}
+          description={lockedProject.data.project.description}
+          splashImage={lockedProject.data.project.splashImage}
+          onUnlocked={unlockLockedProject}
+          onCancel={() => setLockedProject(null)}
+        />
       )}
     </div>
   );

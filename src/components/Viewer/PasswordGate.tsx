@@ -7,6 +7,7 @@ interface PasswordGateProps {
   description?: string;
   splashImage?: string;
   onUnlocked: () => void;
+  onCancel?: () => void;
 }
 
 const PasswordGate: React.FC<PasswordGateProps> = ({
@@ -15,6 +16,7 @@ const PasswordGate: React.FC<PasswordGateProps> = ({
   description,
   splashImage,
   onUnlocked,
+  onCancel,
 }) => {
   const [value, setValue] = useState('');
   const [error, setError] = useState(false);
@@ -42,7 +44,7 @@ const PasswordGate: React.FC<PasswordGateProps> = ({
   return (
     <div
       style={{
-        position: 'absolute',
+        position: 'fixed',
         inset: 0,
         zIndex: 1300,
         display: 'flex',
@@ -139,6 +141,23 @@ const PasswordGate: React.FC<PasswordGateProps> = ({
         >
           Accéder à la visite
         </button>
+
+        {onCancel && (
+          <button
+            onClick={onCancel}
+            style={{
+              width: '100%',
+              padding: '8px 14px',
+              background: 'transparent',
+              border: 'none',
+              color: '#999',
+              cursor: 'pointer',
+              fontSize: '0.85rem',
+            }}
+          >
+            Annuler
+          </button>
+        )}
       </div>
     </div>
   );

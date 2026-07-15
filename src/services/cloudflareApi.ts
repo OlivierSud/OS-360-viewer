@@ -11,6 +11,7 @@ export interface CloudProjectEntry {
   description?: string | null;
   splash_url?: string | null;
   updated_at: string;
+  passwordHash?: string | null;
 }
 
 export interface CloudProjectRecord extends CloudProjectEntry {
@@ -99,6 +100,7 @@ export async function saveCloudProject({ id, project }: SaveProjectPayload): Pro
       author: project.project.author,
       description: project.project.description,
       splash_url: project.project.splashImage,
+      passwordHash: project.project.passwordHash ?? null,
       project_data: project,
     }),
   });

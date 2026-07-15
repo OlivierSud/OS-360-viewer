@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Viewer } from '@photo-sphere-viewer/core';
 import '@photo-sphere-viewer/core/index.css';
 import { MarkersPlugin } from '@photo-sphere-viewer/markers-plugin';
@@ -25,7 +25,7 @@ const SphereViewer: React.FC = () => {
   const scenes = useProjectStore((state) => state.scenes);
   const isAddingHotspot = useProjectStore((state) => state.isAddingHotspot);
   const setIsAddingHotspot = useProjectStore((state) => state.setIsAddingHotspot);
-const mode = useProjectStore((state) => state.mode);
+  const mode = useProjectStore((state) => state.mode);
   const isMovingHotspot = useProjectStore((state) => state.isMovingHotspot);
   const setIsMovingHotspot = useProjectStore((state) => state.setIsMovingHotspot);
 
@@ -44,13 +44,15 @@ const mode = useProjectStore((state) => state.mode);
     }
   };
 
+  // Initialize the viewer when the first panorama is loaded, or update it when the panorama changes.
   useEffect(() => {
     if (!containerRef.current) return;
+    if (!selectedScene?.image) return; // Wait until the project has a valid scene image
 
     if (!viewerRef.current) {
       viewerRef.current = new Viewer({
         container: containerRef.current,
-        panorama: selectedScene?.image || 'https://photo-sphere-viewer-data.netlify.app/assets/sphere.jpg',
+        panorama: selectedScene.image,
         plugins: [[MarkersPlugin, {}]]
       });
 
@@ -63,8 +65,8 @@ const mode = useProjectStore((state) => state.mode);
         }
       });
 
-// Click on empty sphere: used for "Add Hotspot" mode (marker clicks are
-// handled separately via the MarkersPlugin 'select-marker' event).
+      // Click on empty sphere: used for "Add Hotspot" mode (marker clicks are
+      // handled separately via the MarkersPlugin 'select-marker' event).
       viewerRef.current.addEventListener('click', (e: any) => {
         const state = useProjectStore.getState();
         const moving = state.isMovingHotspot;
@@ -109,20 +111,8 @@ const mode = useProjectStore((state) => state.mode);
           setOpenHotspotId(data.hotspotId);
         }
       });
-
-    }
-
-    return () => {
-      if (viewerRef.current) {
-        viewerRef.current.destroy();
-        viewerRef.current = null;
-      }
-    };
-  }, []);
-
-  // Update panorama when scene changes; close any open popup
-  useEffect(() => {
-    if (viewerRef.current && selectedScene?.image) {
+    } else {
+      // If the viewer is already initialized, update the panorama
       setOpenHotspotId(null);
       setPanoramaError(null);
       viewerRef.current.setPanorama(selectedScene.image).catch(err => {
@@ -131,6 +121,16 @@ const mode = useProjectStore((state) => state.mode);
       });
     }
   }, [selectedScene?.image]);
+
+  // Clean up the viewer only on component unmount
+  useEffect(() => {
+    return () => {
+      if (viewerRef.current) {
+        viewerRef.current.destroy();
+        viewerRef.current = null;
+      }
+    };
+  }, []);
 
   // Sync all markers (links + hotspot icons + open popup card) in the sphere
   useEffect(() => {

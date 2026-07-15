@@ -5,7 +5,12 @@
  *   ASSETS → R2 bucket (os360-assets)
  */
 
-const ALLOWED_ORIGINS = ['http://localhost:5173', 'http://localhost:4173', 'https://os360-api.olivier0411.workers.dev'];
+const ALLOWED_ORIGINS = [
+  'http://localhost:5173',
+  'http://localhost:4173',
+  'https://os360-api.olivier0411.workers.dev',
+  'https://oliviersud.github.io'
+];
 
 function corsHeaders(origin) {
   const allowed = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
@@ -130,8 +135,17 @@ export default {
           return error('Asset not found', 404, origin);
         }
 
-        const headers = new Headers(corsHeaders(origin));
+        const headers = new Headers();
+        // Write object metadata first (copies content-type, content-encoding, etc.)
         object.writeHttpMetadata(headers);
+        
+        // Add CORS headers after writing metadata to prevent overwrites
+        const cors = corsHeaders(origin);
+        for (const [name, val] of Object.entries(cors)) {
+          headers.set(name, val);
+        }
+
+        headers.set('Vary', 'Origin');
         headers.set('Cache-Control', 'public, max-age=31536000, immutable');
         headers.set('ETag', object.httpEtag);
 

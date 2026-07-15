@@ -15,6 +15,8 @@ export interface ProjectMetadata {
   defaultScene?: string;
   splashImage?: string;
   splashDuration?: number;
+  /** SHA-256 hash du mot de passe. Absent ou vide = projet sans protection. */
+  passwordHash?: string;
 }
 
 export interface Project {

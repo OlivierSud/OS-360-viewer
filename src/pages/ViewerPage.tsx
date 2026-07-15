@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import L from 'leaflet';
 import { useProjectStore } from '../state/projectStore';
 import SphereViewer from '../components/Viewer/SphereViewer';
+import PasswordGate from '../components/Viewer/PasswordGate';
 import ProjectMap from '../components/Map/ProjectMap';
 import { loadCloudProject } from '../services/cloudflareApi';
 
@@ -34,7 +35,7 @@ const ViewerPage: React.FC = () => {
   const mapRef = useRef<L.Map | null>(null);
   const [showMap, setShowMap] = useState(true);
   const [mapExpanded, setMapExpanded] = useState(false);
-  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [status, setStatus] = useState<'loading' | 'password-required' | 'ready' | 'error'>('loading');
 
   useEffect(() => {
     setMode('viewer');
@@ -74,6 +75,11 @@ const ViewerPage: React.FC = () => {
 
         setTimeout(() => {
           if (cancelled) return;
+          // A protected project shows the password gate before revealing the tour.
+          if (record.project_data.project.passwordHash) {
+            setStatus('password-required');
+            return;
+          }
           selectScene(record.project_data.project.defaultScene ?? record.project_data.scenes[0]?.id ?? null);
           setStatus('ready');
         }, remaining);
@@ -94,6 +100,13 @@ const ViewerPage: React.FC = () => {
       cancelled = true;
     };
   }, [searchParams, selectScene, setProject]);
+
+  const handleUnlocked = () => {
+    const state = useProjectStore.getState();
+    const meta = state.project?.project;
+    selectScene(meta?.defaultScene ?? state.scenes[0]?.id ?? null);
+    setStatus('ready');
+  };
 
   return (
     <div className="viewer-layout" style={{ position: 'relative', overflow: 'hidden' }}>
@@ -448,6 +461,16 @@ const ViewerPage: React.FC = () => {
           <span style={{ fontSize: '2rem' }}>⚠️</span>
           <span>Projet introuvable ou lien invalide.</span>
         </div>
+      )}
+
+      {status === 'password-required' && project?.project?.passwordHash && (
+        <PasswordGate
+          expectedHash={project.project.passwordHash}
+          title={project.project.title}
+          description={project.project.description}
+          splashImage={project.project.splashImage}
+          onUnlocked={handleUnlocked}
+        />
       )}
     </div>
   );

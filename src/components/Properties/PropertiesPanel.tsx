@@ -5,6 +5,7 @@ import { getViewerUrlForCurrentProject } from '../../services/projectCloudSave';
 import { createTrackedObjectUrl } from '../../services/mediaRegistry';
 import { createProjectId } from '../../storage/projectRegistry';
 import type { Project } from '../../models/Project';
+import { sha256 } from '../../utils/crypto';
 
 /* ── Small reusable field row ── */
 const Field: React.FC<{
@@ -57,11 +58,20 @@ const ProjectSettingsPanel: React.FC = () => {
   const currentProjectId = useProjectStore((s) => s.currentProjectId);
   const scenes = useProjectStore((s) => s.scenes);
 
+  const updateProjectPassword = useProjectStore((s) => s.updateProjectPassword);
+
   const [copied, setCopied] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mapFileRef = useRef<HTMLInputElement>(null);
+
+  // Password protection state
+  const [pwInput, setPwInput] = useState('');
+  const [pwConfirm, setPwConfirm] = useState('');
+  const [pwError, setPwError] = useState<string | null>(null);
+  const [pwSuccess, setPwSuccess] = useState(false);
+  const [pwShowFields, setPwShowFields] = useState(false);
 
   const handleMapFileClick = () => mapFileRef.current?.click();
 
@@ -458,6 +468,240 @@ const ProjectSettingsPanel: React.FC = () => {
         <div style={{ fontSize: '0.75rem', color: '#444', lineHeight: 1.5 }}>
           Ce lien sera actif une fois la visioneuse déployée. Partagez-le avec vos clients pour qu'ils accèdent directement au tour virtuel.
         </div>
+      </div>
+
+      {/* ── Password protection ── */}
+      <div style={{ borderTop: '1px solid #333', paddingTop: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <div style={{ fontSize: '0.72rem', color: '#888', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+          🔒 Protection par mot de passe
+        </div>
+
+        {meta.passwordHash ? (
+          // — Protected state —
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '8px 12px',
+              background: 'rgba(76,175,80,0.1)',
+              border: '1px solid rgba(76,175,80,0.35)',
+              borderRadius: '6px',
+            }}>
+              <span style={{ fontSize: '1rem' }}>🔒</span>
+              <span style={{ fontSize: '0.85rem', color: '#81c784' }}>Ce projet est protégé par un mot de passe.</span>
+            </div>
+
+            {pwShowFields ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <Field label="Nouveau mot de passe">
+                  <input
+                    type="password"
+                    value={pwInput}
+                    onChange={(e) => { setPwInput(e.target.value); setPwError(null); setPwSuccess(false); }}
+                    placeholder="Laisser vide pour supprimer"
+                    style={inputStyle}
+                    autoComplete="new-password"
+                  />
+                </Field>
+                <Field label="Confirmer le mot de passe">
+                  <input
+                    type="password"
+                    value={pwConfirm}
+                    onChange={(e) => { setPwConfirm(e.target.value); setPwError(null); }}
+                    placeholder="Confirmer"
+                    style={inputStyle}
+                    autoComplete="new-password"
+                  />
+                </Field>
+                {pwError && (
+                  <div style={{ fontSize: '0.8rem', color: '#ef9a9a' }}>⚠️ {pwError}</div>
+                )}
+                {pwSuccess && (
+                  <div style={{ fontSize: '0.8rem', color: '#81c784' }}>✓ Mot de passe mis à jour !</div>
+                )}
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    onClick={async () => {
+                      if (!pwInput) {
+                        // Remove password
+                        updateProjectPassword(undefined);
+                        setPwInput('');
+                        setPwConfirm('');
+                        setPwShowFields(false);
+                        return;
+                      }
+                      if (pwInput !== pwConfirm) {
+                        setPwError('Les mots de passe ne correspondent pas.');
+                        return;
+                      }
+                      const hash = await sha256(pwInput);
+                      updateProjectPassword(hash);
+                      setPwInput('');
+                      setPwConfirm('');
+                      setPwShowFields(false);
+                      setPwSuccess(true);
+                      setTimeout(() => setPwSuccess(false), 2500);
+                    }}
+                    style={{
+                      flex: 1,
+                      padding: '7px 10px',
+                      background: '#1b5e20',
+                      border: '1px solid #388e3c',
+                      color: '#c8e6c9',
+                      borderRadius: '5px',
+                      cursor: 'pointer',
+                      fontSize: '0.82rem',
+                    }}
+                  >
+                    ✓ Enregistrer
+                  </button>
+                  <button
+                    onClick={() => { setPwShowFields(false); setPwInput(''); setPwConfirm(''); setPwError(null); }}
+                    style={{
+                      padding: '7px 10px',
+                      background: '#252526',
+                      border: '1px solid #444',
+                      color: '#aaa',
+                      borderRadius: '5px',
+                      cursor: 'pointer',
+                      fontSize: '0.82rem',
+                    }}
+                  >
+                    Annuler
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  onClick={() => setPwShowFields(true)}
+                  style={{
+                    flex: 1,
+                    padding: '7px 10px',
+                    background: '#252526',
+                    border: '1px solid #444',
+                    color: '#fff',
+                    borderRadius: '5px',
+                    cursor: 'pointer',
+                    fontSize: '0.82rem',
+                  }}
+                >
+                  🔑 Changer le mot de passe
+                </button>
+                <button
+                  onClick={() => { updateProjectPassword(undefined); }}
+                  style={{
+                    padding: '7px 10px',
+                    background: '#3a1f1f',
+                    border: '1px solid #8a3333',
+                    color: '#ffcdd2',
+                    borderRadius: '5px',
+                    cursor: 'pointer',
+                    fontSize: '0.82rem',
+                  }}
+                >
+                  🔓 Désactiver
+                </button>
+              </div>
+            )}
+          </div>
+        ) : (
+          // — Unprotected state —
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div style={{ fontSize: '0.78rem', color: '#555' }}>
+              Ajoutez un mot de passe pour restreindre l'accès à la visionneuse.
+            </div>
+            {pwShowFields ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <Field label="Mot de passe">
+                  <input
+                    type="password"
+                    value={pwInput}
+                    onChange={(e) => { setPwInput(e.target.value); setPwError(null); }}
+                    placeholder="Choisir un mot de passe"
+                    style={inputStyle}
+                    autoComplete="new-password"
+                  />
+                </Field>
+                <Field label="Confirmer le mot de passe">
+                  <input
+                    type="password"
+                    value={pwConfirm}
+                    onChange={(e) => { setPwConfirm(e.target.value); setPwError(null); }}
+                    placeholder="Confirmer"
+                    style={inputStyle}
+                    autoComplete="new-password"
+                  />
+                </Field>
+                {pwError && (
+                  <div style={{ fontSize: '0.8rem', color: '#ef9a9a' }}>⚠️ {pwError}</div>
+                )}
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    onClick={async () => {
+                      if (!pwInput) {
+                        setPwError('Veuillez saisir un mot de passe.');
+                        return;
+                      }
+                      if (pwInput !== pwConfirm) {
+                        setPwError('Les mots de passe ne correspondent pas.');
+                        return;
+                      }
+                      const hash = await sha256(pwInput);
+                      updateProjectPassword(hash);
+                      setPwInput('');
+                      setPwConfirm('');
+                      setPwShowFields(false);
+                    }}
+                    style={{
+                      flex: 1,
+                      padding: '7px 10px',
+                      background: '#1b5e20',
+                      border: '1px solid #388e3c',
+                      color: '#c8e6c9',
+                      borderRadius: '5px',
+                      cursor: 'pointer',
+                      fontSize: '0.82rem',
+                    }}
+                  >
+                    🔒 Activer la protection
+                  </button>
+                  <button
+                    onClick={() => { setPwShowFields(false); setPwInput(''); setPwConfirm(''); setPwError(null); }}
+                    style={{
+                      padding: '7px 10px',
+                      background: '#252526',
+                      border: '1px solid #444',
+                      color: '#aaa',
+                      borderRadius: '5px',
+                      cursor: 'pointer',
+                      fontSize: '0.82rem',
+                    }}
+                  >
+                    Annuler
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => setPwShowFields(true)}
+                style={{
+                  padding: '8px 10px',
+                  background: '#252526',
+                  border: '1px solid #444',
+                  borderRadius: '5px',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  fontSize: '0.82rem',
+                  textAlign: 'left',
+                }}
+              >
+                🔒 Ajouter un mot de passe
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       <div style={{ borderTop: '1px solid #333', paddingTop: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>

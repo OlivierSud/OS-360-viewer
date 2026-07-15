@@ -36,6 +36,7 @@ interface ProjectState {
   showProjectSettings: boolean;
   setShowProjectSettings: (val: boolean) => void;
   updateProjectTitle: (title: string) => void;
+  updateProjectPassword: (hash: string | undefined) => void;
 }
 
 export const useProjectStore = create<ProjectState>((set) => ({
@@ -225,6 +226,11 @@ export const useProjectStore = create<ProjectState>((set) => ({
   updateProjectTitle: (title) => set((state) => ({
     project: state.project
       ? { ...state.project, project: { ...state.project.project, title } }
+      : null
+  })),
+  updateProjectPassword: (hash) => set((state) => ({
+    project: state.project
+      ? { ...state.project, project: { ...state.project.project, passwordHash: hash } }
       : null
   })),
   addHotspot: (sceneId, hotspot) => set((state) => {

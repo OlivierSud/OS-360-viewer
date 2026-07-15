@@ -27,7 +27,9 @@ const ViewerPage: React.FC = () => {
   const setProject = useProjectStore((state) => state.setProject);
   const selectScene = useProjectStore((state) => state.selectScene);
   const project = useProjectStore((state) => state.project);
-  const [searchParams] = useSearchParams();
+  const selectedSceneId = useProjectStore((state) => state.selectedSceneId);
+  const scenes = useProjectStore((state) => state.scenes);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const mapRef = useRef<L.Map | null>(null);
   const [showMap, setShowMap] = useState(true);
@@ -37,6 +39,15 @@ const ViewerPage: React.FC = () => {
   useEffect(() => {
     setMode('viewer');
   }, [setMode]);
+
+  // Handle project link navigation in the viewer
+  useEffect(() => {
+    if (!selectedSceneId) return;
+    const scene = scenes.find((s) => s.id === selectedSceneId);
+    if (scene?.type === 'project-link' && scene.targetProjectId) {
+      setSearchParams({ id: scene.targetProjectId });
+    }
+  }, [selectedSceneId, scenes, setSearchParams]);
 
   useEffect(() => {
     const projectId = searchParams.get('id');

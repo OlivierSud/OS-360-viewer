@@ -6,14 +6,17 @@ const Sidebar: React.FC = () => {
   const selectScene = useProjectStore((state) => state.selectScene);
   const selectedSceneId = useProjectStore((state) => state.selectedSceneId);
   const updateScene = useProjectStore((state) => state.updateScene);
+  const removeScene = useProjectStore((state) => state.removeScene);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const startEditing = (id: string, currentTitle: string, e: React.MouseEvent) => {
-    e.stopPropagation(); // Avoid triggering selectScene
+    e.stopPropagation();
     setEditingId(id);
     setEditText(currentTitle);
+    setConfirmDeleteId(null);
   };
 
   const saveEdit = (id: string) => {
@@ -24,11 +27,8 @@ const Sidebar: React.FC = () => {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent, id: string) => {
-    if (e.key === 'Enter') {
-      saveEdit(id);
-    } else if (e.key === 'Escape') {
-      setEditingId(null);
-    }
+    if (e.key === 'Enter') saveEdit(id);
+    else if (e.key === 'Escape') setEditingId(null);
   };
 
   return (
@@ -38,23 +38,25 @@ const Sidebar: React.FC = () => {
         {scenes.map((scene) => {
           const isSelected = scene.id === selectedSceneId;
           const isEditing = scene.id === editingId;
+          const isConfirmingDelete = scene.id === confirmDeleteId;
 
           return (
-            <li 
-              key={scene.id} 
-              onClick={() => selectScene(scene.id)}
-              style={{ 
-                cursor: 'pointer', 
-                padding: '8px 10px', 
+            <li
+              key={scene.id}
+              onClick={() => { if (!isConfirmingDelete) selectScene(scene.id); }}
+              style={{
+                cursor: 'pointer',
+                padding: '8px 10px',
                 borderBottom: '1px solid #333',
                 backgroundColor: isSelected ? '#37373d' : 'transparent',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 borderRadius: '4px',
-                marginBottom: '2px'
+                marginBottom: '2px',
               }}
             >
+              {/* Left: title / edit input / confirm delete */}
               {isEditing ? (
                 <input
                   type="text"
@@ -69,50 +71,80 @@ const Sidebar: React.FC = () => {
                     color: 'white',
                     padding: '2px 5px',
                     borderRadius: '3px',
-                    width: '80%'
+                    width: '80%',
                   }}
-                  onClick={(e) => e.stopPropagation()} // Avoid selecting scene on click
+                  onClick={(e) => e.stopPropagation()}
                 />
+              ) : isConfirmingDelete ? (
+                <div
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '100%' }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <span style={{ fontSize: '0.78rem', color: '#ff6b6b', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    Supprimer ?
+                  </span>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); removeScene(scene.id); setConfirmDeleteId(null); }}
+                    style={{ background: '#d32f2f', border: 'none', color: 'white', cursor: 'pointer', padding: '2px 8px', borderRadius: '3px', fontSize: '0.75rem', fontWeight: 600 }}
+                  >
+                    Oui
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(null); }}
+                    style={{ background: '#444', border: 'none', color: '#ccc', cursor: 'pointer', padding: '2px 8px', borderRadius: '3px', fontSize: '0.75rem' }}
+                  >
+                    Non
+                  </button>
+                </div>
               ) : (
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
                   {scene.title}
                 </span>
               )}
 
-              {!isEditing && (
-                <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+              {/* Right: action buttons (hidden during edit or confirm) */}
+              {!isEditing && !isConfirmingDelete && (
+                <div style={{ display: 'flex', gap: '2px', alignItems: 'center', flexShrink: 0, marginLeft: '6px' }}>
+                  {/* Visibility toggle */}
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       updateScene(scene.id, { showTitleInViewer: scene.showTitleInViewer === false ? true : false });
                     }}
                     style={{
-                      background: 'none',
-                      border: 'none',
-                      cursor: 'pointer',
-                      padding: '2px 4px',
-                      fontSize: '0.9rem',
+                      background: 'none', border: 'none', cursor: 'pointer', padding: '2px 3px', fontSize: '0.85rem',
                       opacity: scene.showTitleInViewer !== false ? 1 : 0.35,
                       filter: scene.showTitleInViewer !== false ? 'none' : 'grayscale(100%)',
-                      transition: 'opacity 0.2s'
+                      transition: 'opacity 0.2s',
                     }}
-                    title={scene.showTitleInViewer !== false ? "Masquer le nom dans la vue 360" : "Afficher le nom dans la vue 360"}
+                    title={scene.showTitleInViewer !== false ? 'Masquer le nom dans la vue 360' : 'Afficher le nom dans la vue 360'}
                   >
                     👁️
                   </button>
+
+                  {/* Rename */}
                   <button
                     onClick={(e) => startEditing(scene.id, scene.title, e)}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: '#888',
-                      cursor: 'pointer',
-                      padding: '2px 4px',
-                      fontSize: '0.85rem'
-                    }}
+                    style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', padding: '2px 3px', fontSize: '0.85rem' }}
                     title="Renommer le viewpoint"
                   >
                     ✏️
+                  </button>
+
+                  {/* Delete */}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(scene.id); }}
+                    style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', padding: '2px 3px', lineHeight: 1, transition: 'color 0.15s' }}
+                    onMouseEnter={(e) => (e.currentTarget.style.color = '#ff6b6b')}
+                    onMouseLeave={(e) => (e.currentTarget.style.color = '#888')}
+                    title="Supprimer ce viewpoint"
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="3 6 5 6 21 6"/>
+                      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                      <path d="M10 11v6"/><path d="M14 11v6"/>
+                      <path d="M9 6V4h6v2"/>
+                    </svg>
                   </button>
                 </div>
               )}

@@ -280,36 +280,128 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, isExpa
   const updateScene = useProjectStore((state) => state.updateScene);
   const addLink = useProjectStore((state) => state.addLink);
   const removeLink = useProjectStore((state) => state.removeLink);
+  const removeScene = useProjectStore((state) => state.removeScene);
   const mode = useProjectStore((state) => state.mode);
   
   const [isPlacing, setIsPlacing] = useState(false);
+  const [isPlacingProjectLink, setIsPlacingProjectLink] = useState(false);
   const [isMoving, setIsMoving] = useState(false);
   const [isRotating, setIsRotating] = useState(false);
   const [isLinking, setIsLinking] = useState(false);
   const [isDeletingPath, setIsDeletingPath] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteConfirmSceneId, setDeleteConfirmSceneId] = useState<string | null>(null);
   const [linkStartSceneId, setLinkStartSceneId] = useState<string | null>(null);
   const [isDraggingAngle, setIsDraggingAngle] = useState(false);
   const [pendingPosition, setPendingPosition] = useState<{x: number, y: number} | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mapFileRef = useRef<HTMLInputElement>(null);
 
-  const mapControlButtonStyle = (isActive: boolean, activeColor = '#d32f2f', inactiveColor = '#1e1e1e') => ({
-    width: '110px',
-    padding: '8px 12px',
+  const mapControlButtonStyle = (isActive: boolean, activeColor = '#d32f2f', inactiveColor = 'rgba(0,0,0,0.55)') => ({
+    width: '130px',
+    padding: '7px 14px 7px 10px',
     cursor: 'pointer',
     backgroundColor: isActive ? activeColor : inactiveColor,
     color: 'white',
-    border: '1px solid #3d3d3d',
-    borderRadius: '4px',
-    textAlign: 'left' as const,
-    fontSize: '0.82rem',
-    boxShadow: '0 2px 6px rgba(0,0,0,0.5)',
+    border: isActive ? `1px solid ${activeColor}` : '1px solid rgba(255,255,255,0.12)',
+    borderRadius: '999px',
+    fontSize: '0.78rem',
+    fontWeight: 600 as const,
+    letterSpacing: '0.02em',
+    boxShadow: isActive
+      ? `0 0 0 2px ${activeColor}55, 0 4px 12px rgba(0,0,0,0.5)`
+      : '0 2px 8px rgba(0,0,0,0.4)',
+    backdropFilter: 'blur(8px)',
+    WebkitBackdropFilter: 'blur(8px)',
     display: 'flex',
     alignItems: 'center',
-    gap: '8px',
-    transition: 'all 0.2s ease',
-    fontWeight: isActive ? ('bold' as const) : ('normal' as const)
+    justifyContent: 'flex-start',
+    gap: '7px',
+    transition: 'all 0.18s ease',
+    whiteSpace: 'nowrap' as const,
+    userSelect: 'none' as const,
   });
+
+  // SVG icons for editor buttons
+  const Icon360 = () => (
+    <svg width="18" height="18" viewBox="0 0 26 26" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      {/* Camera body */}
+      <rect x="2" y="4" width="18" height="13" rx="2.5"/>
+      {/* Top bump */}
+      <path d="M7 4V3h5v1"/>
+      {/* Lens outer */}
+      <circle cx="11" cy="10.5" r="4"/>
+      {/* Lens inner */}
+      <circle cx="11" cy="10.5" r="1.5" fill="currentColor" stroke="none"/>
+      {/* Viewfinder dot */}
+      <circle cx="3.8" cy="7" r="0.7" fill="currentColor" stroke="none"/>
+      {/* Left rotation arrow */}
+      <path d="M3 20.5c2-4 5-5.5 8-5.5"/>
+      <polyline points="3.5 23 3 20.5 6 20.5"/>
+      {/* Right rotation arrow */}
+      <path d="M19 20.5c-2-4-5-5.5-8-5.5"/>
+      <polyline points="18.5 23 19 20.5 16 20.5"/>
+    </svg>
+  );
+
+  const IconPortal = () => (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      {/* Door/bracket */}
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+      {/* Arrow pointing right */}
+      <polyline points="16 17 21 12 16 7"/>
+      <line x1="21" y1="12" x2="9" y2="12"/>
+    </svg>
+  );
+
+  const IconMove = () => (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="5 9 2 12 5 15"/>
+      <polyline points="9 5 12 2 15 5"/>
+      <polyline points="15 19 12 22 9 19"/>
+      <polyline points="19 9 22 12 19 15"/>
+      <line x1="2" y1="12" x2="22" y2="12"/>
+      <line x1="12" y1="2" x2="12" y2="22"/>
+    </svg>
+  );
+
+  const IconRotate = () => (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21.5 2v6h-6"/>
+      <path d="M21.34 15.57a10 10 0 1 1-.57-8.38"/>
+    </svg>
+  );
+
+  const IconPath = () => (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="6" cy="5" r="2"/>
+      <circle cx="18" cy="19" r="2"/>
+      <path d="M6 7c0 4 3 5 6 6s6 2 6 6"/>
+    </svg>
+  );
+
+  const IconCancel = () => (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+      <line x1="18" y1="6" x2="6" y2="18"/>
+      <line x1="6" y1="6" x2="18" y2="18"/>
+    </svg>
+  );
+
+  const IconTrash = () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="3 6 5 6 21 6"/>
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+      <path d="M10 11v6"/>
+      <path d="M14 11v6"/>
+      <path d="M9 6V4h6v2"/>
+    </svg>
+  );
+
+  const IconCheck = () => (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="20 6 9 17 4 12"/>
+    </svg>
+  );
 
   const selectedScene = scenes.find(s => s.id === selectedSceneId);
 
@@ -420,6 +512,22 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, isExpa
         if (isPlacing) {
           setPendingPosition({ x: e.latlng.lng, y: e.latlng.lat });
           fileInputRef.current?.click();
+        } else if (isPlacingProjectLink) {
+          const sceneId = `project_link_${Date.now()}`;
+          const newScene: Scene = {
+            id: sceneId,
+            title: "Lien Projet",
+            image: "",
+            thumbnail: "",
+            position: { x: e.latlng.lng, y: e.latlng.lat },
+            north: 0,
+            links: [],
+            hotspots: [],
+            type: 'project-link'
+          };
+          addScene(newScene);
+          selectScene(newScene.id);
+          setIsPlacingProjectLink(false);
         }
       },
       mousedown(e) {
@@ -473,52 +581,70 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, isExpa
     const isSelected = scene.id === selectedSceneId;
     const isRotateMode = isRotating && isSelected;
     const isLinkStart = scene.id === linkStartSceneId;
+    const isProjectLink = scene.type === 'project-link';
     // Yaw is in radians. Convert to degrees.
     const angle = isSelected ? (currentYaw * 180 / Math.PI) + scene.north : 0;
     
     let html = '';
     if (isSelected) {
-      html = `
-        <div style="position: relative; width: 100px; height: 100px; display: flex; align-items: center; justify-content: center;">
-          ${isRotateMode ? `
-            <div style="position: absolute; top: 10px; left: 10px; right: 10px; bottom: 10px; border: 2px dashed #007acc; border-radius: 50%; pointer-events: none; box-shadow: 0 0 6px rgba(0,122,204,0.4); animation: rotate-dash 20s linear infinite;"></div>
-            <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; transform: rotate(${angle}deg); pointer-events: none;">
-              <div style="position: absolute; top: 4px; left: 50%; transform: translateX(-50%); width: 12px; height: 12px; background: #ffc107; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 4px rgba(0,0,0,0.6); cursor: row-resize;"></div>
-            </div>
-          ` : ''}
-          ${isLinkStart ? `
-            <div style="position: absolute; top: 15px; left: 15px; right: 15px; bottom: 15px; border: 2px dashed #28a745; border-radius: 50%; pointer-events: none; animation: rotate-dash 10s linear infinite;"></div>
-          ` : ''}
-          <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; transform: rotate(${angle}deg); pointer-events: none; width: 100%; height: 100%;">
-            <svg viewBox="0 0 100 100" style="width: 100%; height: 100%;">
-              <defs>
-                <radialGradient id="coneGradient" cx="50" cy="50" r="56" gradientUnits="userSpaceOnUse">
-                  <stop offset="0%" stop-color="#007acc" stop-opacity="0.8" />
-                  <stop offset="100%" stop-color="#007acc" stop-opacity="0" />
-                </radialGradient>
-              </defs>
-              <path d="M50 50 L10 10 A56.5 56.5 0 0 1 90 10 Z" fill="url(#coneGradient)" />
-            </svg>
+      if (isProjectLink) {
+        html = `
+          <div style="position: relative; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;">
+            <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; border: 3px solid #9c27b0; border-radius: 50%; pointer-events: none; background: rgba(156, 39, 176, 0.25); box-shadow: 0 0 8px rgba(156, 39, 176, 0.6);"></div>
+            <div style="font-size: 1.1rem; z-index: 2; pointer-events: none; line-height: 1;">🔗</div>
           </div>
-          <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 14px; height: 14px; background: #007acc; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 4px rgba(0,0,0,0.5);"></div>
-        </div>
-      `;
+        `;
+      } else {
+        html = `
+          <div style="position: relative; width: 100px; height: 100px; display: flex; align-items: center; justify-content: center;">
+            ${isRotateMode ? `
+              <div style="position: absolute; top: 10px; left: 10px; right: 10px; bottom: 10px; border: 2px dashed #007acc; border-radius: 50%; pointer-events: none; box-shadow: 0 0 6px rgba(0,122,204,0.4); animation: rotate-dash 20s linear infinite;"></div>
+              <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; transform: rotate(${angle}deg); pointer-events: none;">
+                <div style="position: absolute; top: 4px; left: 50%; transform: translateX(-50%); width: 12px; height: 12px; background: #ffc107; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 4px rgba(0,0,0,0.6); cursor: row-resize;"></div>
+              </div>
+            ` : ''}
+            ${isLinkStart ? `
+              <div style="position: absolute; top: 15px; left: 15px; right: 15px; bottom: 15px; border: 2px dashed #28a745; border-radius: 50%; pointer-events: none; animation: rotate-dash 10s linear infinite;"></div>
+            ` : ''}
+            <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; transform: rotate(${angle}deg); pointer-events: none; width: 100%; height: 100%;">
+              <svg viewBox="0 0 100 100" style="width: 100%; height: 100%;">
+                <defs>
+                  <radialGradient id="coneGradient" cx="50" cy="50" r="56" gradientUnits="userSpaceOnUse">
+                    <stop offset="0%" stop-color="#007acc" stop-opacity="0.8" />
+                    <stop offset="100%" stop-color="#007acc" stop-opacity="0" />
+                  </radialGradient>
+                </defs>
+                <path d="M50 50 L10 10 A56.5 56.5 0 0 1 90 10 Z" fill="url(#coneGradient)" />
+              </svg>
+            </div>
+            <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 14px; height: 14px; background: #007acc; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 4px rgba(0,0,0,0.5);"></div>
+          </div>
+        `;
+      }
     } else {
-      html = `
-        <div style="position: relative; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;">
-          ${isLinkStart ? `
-            <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; border: 2px dashed #28a745; border-radius: 50%; pointer-events: none; animation: rotate-dash 10s linear infinite;"></div>
-          ` : ''}
-          <div style="width: 12px; height: 12px; background: #ff5722; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 4px rgba(0,0,0,0.5);"></div>
-        </div>
-      `;
+      if (isProjectLink) {
+        html = `
+          <div style="position: relative; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;">
+            <div style="width: 18px; height: 18px; background: #9c27b0; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 4px rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; font-size: 0.62rem; color: white; line-height: 1;">🔗</div>
+          </div>
+        `;
+      } else {
+        html = `
+          <div style="position: relative; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;">
+            ${isLinkStart ? `
+              <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; border: 2px dashed #28a745; border-radius: 50%; pointer-events: none; animation: rotate-dash 10s linear infinite;"></div>
+            ` : ''}
+            <div style="width: 12px; height: 12px; background: #ff5722; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 4px rgba(0,0,0,0.5);"></div>
+          </div>
+        `;
+      }
     }
 
     return L.divIcon({
       html,
       className: 'custom-scene-marker',
-      iconSize: isSelected ? [100, 100] : [30, 30],
-      iconAnchor: isSelected ? [50, 50] : [15, 15]
+      iconSize: isSelected && !isProjectLink ? [100, 100] : isSelected && isProjectLink ? [40, 40] : [30, 30],
+      iconAnchor: isSelected && !isProjectLink ? [50, 50] : isSelected && isProjectLink ? [20, 20] : [15, 15]
     });
   };
 
@@ -559,7 +685,9 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, isExpa
                 draggable={isMoving}
                 eventHandlers={{ 
                   click: () => {
-                    if (isLinking) {
+                    if (isDeleting) {
+                      setDeleteConfirmSceneId(scene.id);
+                    } else if (isLinking) {
                       if (!linkStartSceneId) {
                         setLinkStartSceneId(scene.id);
                       } else {
@@ -581,7 +709,33 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, isExpa
                   }
                 }}
               >
-                {!isLinking && !isMoving && !isRotating && <Popup>{scene.title}</Popup>}
+                {!isLinking && !isMoving && !isRotating && !isDeleting && <Popup>{scene.title}</Popup>}
+                {isDeleting && deleteConfirmSceneId === scene.id && (
+                  <Popup autoClose={false} closeOnClick={false}>
+                    <div style={{ fontFamily: 'system-ui, sans-serif', minWidth: '180px' }}>
+                      <div style={{ fontWeight: 700, marginBottom: '8px', color: '#d32f2f', fontSize: '0.9rem' }}>
+                        🗑️ Supprimer ce point ?
+                      </div>
+                      <div style={{ fontSize: '0.82rem', marginBottom: '10px', color: '#444' }}>
+                        <strong>{scene.title || 'Sans titre'}</strong>
+                      </div>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button
+                          onClick={() => { removeScene(scene.id); setDeleteConfirmSceneId(null); }}
+                          style={{ flex: 1, padding: '5px 0', backgroundColor: '#d32f2f', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600 }}
+                        >
+                          Supprimer
+                        </button>
+                        <button
+                          onClick={() => setDeleteConfirmSceneId(null)}
+                          style={{ flex: 1, padding: '5px 0', backgroundColor: '#666', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem' }}
+                        >
+                          Annuler
+                        </button>
+                      </div>
+                    </div>
+                  </Popup>
+                )}
               </Marker>
             ))}
             {/* Draw Path Polylines */}
@@ -621,43 +775,51 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, isExpa
 
           {mode === 'editor' &&
           <div style={{ position: 'absolute', top: 90, left: 10, zIndex: 1000, display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            {!isMoving && !isRotating && !isLinking && (
+            {!isMoving && !isRotating && !isLinking && !isPlacingProjectLink && (
               <button 
                 onClick={() => setIsPlacing(!isPlacing)}
                 style={mapControlButtonStyle(isPlacing, '#d32f2f', '#007acc')}
               >
-                {isPlacing ? '❌ Cancel' : '📍 Add'}
+                {isPlacing ? <><IconCancel /> Cancel</> : <><Icon360 /> Add 360</>}
               </button>
             )}
-            {!isPlacing && !isRotating && !isLinking && (
+            {!isMoving && !isRotating && !isLinking && !isPlacing && (
+              <button 
+                onClick={() => setIsPlacingProjectLink(!isPlacingProjectLink)}
+                style={mapControlButtonStyle(isPlacingProjectLink, '#d32f2f', '#0c8554')}
+              >
+                {isPlacingProjectLink ? <><IconCancel /> Cancel</> : <><IconPortal /> Add Portal</>}
+              </button>
+            )}
+            {!isPlacing && !isPlacingProjectLink && !isRotating && !isLinking && (
               <button 
                 onClick={() => setIsMoving(!isMoving)}
-                style={mapControlButtonStyle(isMoving, '#28a745', '#1e1e1e')}
+                style={mapControlButtonStyle(isMoving, '#28a745', 'rgba(0,0,0,0.55)')}
               >
-                {isMoving ? '✅ Validate' : '✋ Move'}
+                {isMoving ? <><IconCheck /> Done</> : <><IconMove /> Move</>}
               </button>
             )}
-            {!isPlacing && !isMoving && !isLinking && (
+            {!isPlacing && !isPlacingProjectLink && !isMoving && !isLinking && (
               <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
                 <button 
                   onClick={() => setIsRotating(!isRotating)}
-                  style={mapControlButtonStyle(isRotating, '#28a745', '#1e1e1e')}
+                  style={mapControlButtonStyle(isRotating, '#28a745', 'rgba(0,0,0,0.55)')}
                 >
-                  {isRotating ? '✅ Validate' : '🔄 Rotate'}
+                  {isRotating ? <><IconCheck /> Done</> : <><IconRotate /> Rotate</>}
                 </button>
                 {isRotating && selectedSceneId && (
-                  <div style={{ display: 'flex', gap: '2px', boxShadow: '0 2px 6px rgba(0,0,0,0.5)', borderRadius: '4px', overflow: 'hidden' }}>
+                  <div style={{ display: 'flex', gap: '4px' }}>
                     <button 
                       onClick={() => rotateSelectedScene(-5)}
-                      style={{ padding: '8px 12px', cursor: 'pointer', backgroundColor: '#343a40', color: 'white', border: '1px solid #3d3d3d', borderRight: 'none' }}
-                      title="Tourner à gauche (Flèche gauche)"
+                      style={{ padding: '7px 11px', cursor: 'pointer', backgroundColor: 'rgba(0,0,0,0.6)', color: 'white', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '999px', backdropFilter: 'blur(8px)' }}
+                      title="Tourner à gauche"
                     >
                       ◀
                     </button>
                     <button 
                       onClick={() => rotateSelectedScene(5)}
-                      style={{ padding: '8px 12px', cursor: 'pointer', backgroundColor: '#343a40', color: 'white', border: '1px solid #3d3d3d' }}
-                      title="Tourner à droite (Flèche droite)"
+                      style={{ padding: '7px 11px', cursor: 'pointer', backgroundColor: 'rgba(0,0,0,0.6)', color: 'white', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '999px', backdropFilter: 'blur(8px)' }}
+                      title="Tourner à droite"
                     >
                       ▶
                     </button>
@@ -677,19 +839,27 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, isExpa
                       setIsLinking(true);
                     }
                   }}
-                  style={mapControlButtonStyle(isLinking, '#28a745', '#1e1e1e')}
+                  style={mapControlButtonStyle(isLinking, '#28a745', 'rgba(0,0,0,0.55)')}
                 >
-                  {isLinking ? '✅ Validate' : '🔗 Path'}
+                  {isLinking ? <><IconCheck /> Done</> : <><IconPath /> Path</>}
                 </button>
                 {isLinking && (
                   <button 
                     onClick={() => setIsDeletingPath(!isDeletingPath)}
-                    style={mapControlButtonStyle(isDeletingPath, '#d32f2f', '#343a40')}
+                    style={mapControlButtonStyle(isDeletingPath, '#d32f2f', 'rgba(0,0,0,0.55)')}
                   >
                     {isDeletingPath ? '✍️ Link' : '🗑️ Delete'}
                   </button>
                 )}
               </div>
+            )}
+            {!isPlacing && !isPlacingProjectLink && !isMoving && !isRotating && !isLinking && (
+              <button
+                onClick={() => { setIsDeleting(!isDeleting); setDeleteConfirmSceneId(null); }}
+                style={mapControlButtonStyle(isDeleting, '#d32f2f', 'rgba(189, 1, 1, 0.76)')}
+              >
+                {isDeleting ? <><IconCancel /> Cancel</> : <><IconTrash /> Delete</>}
+              </button>
             )}
             <input 
               type="file" 
@@ -731,7 +901,9 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, isExpa
                 draggable={isMoving}
                 eventHandlers={{ 
                   click: () => {
-                    if (isLinking) {
+                    if (isDeleting) {
+                      setDeleteConfirmSceneId(scene.id);
+                    } else if (isLinking) {
                       if (!linkStartSceneId) {
                         setLinkStartSceneId(scene.id);
                       } else {
@@ -753,7 +925,33 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, isExpa
                   }
                 }}
               >
-                {!isLinking && !isMoving && !isRotating && <Popup>{scene.title}</Popup>}
+                {!isLinking && !isMoving && !isRotating && !isDeleting && <Popup>{scene.title}</Popup>}
+                {isDeleting && deleteConfirmSceneId === scene.id && (
+                  <Popup autoClose={false} closeOnClick={false}>
+                    <div style={{ fontFamily: 'system-ui, sans-serif', minWidth: '180px' }}>
+                      <div style={{ fontWeight: 700, marginBottom: '8px', color: '#d32f2f', fontSize: '0.9rem' }}>
+                        🗑️ Supprimer ce point ?
+                      </div>
+                      <div style={{ fontSize: '0.82rem', marginBottom: '10px', color: '#444' }}>
+                        <strong>{scene.title || 'Sans titre'}</strong>
+                      </div>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button
+                          onClick={() => { removeScene(scene.id); setDeleteConfirmSceneId(null); }}
+                          style={{ flex: 1, padding: '5px 0', backgroundColor: '#d32f2f', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600 }}
+                        >
+                          Supprimer
+                        </button>
+                        <button
+                          onClick={() => setDeleteConfirmSceneId(null)}
+                          style={{ flex: 1, padding: '5px 0', backgroundColor: '#666', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem' }}
+                        >
+                          Annuler
+                        </button>
+                      </div>
+                    </div>
+                  </Popup>
+                )}
               </Marker>
             ))}
             {/* Draw Path Polylines */}
@@ -793,43 +991,51 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, isExpa
 
           {mode === 'editor' &&
           <div style={{ position: 'absolute', top: 90, left: 10, zIndex: 1000, display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            {!isMoving && !isRotating && !isLinking && (
+            {!isMoving && !isRotating && !isLinking && !isPlacingProjectLink && (
               <button 
                 onClick={() => setIsPlacing(!isPlacing)}
                 style={mapControlButtonStyle(isPlacing, '#d32f2f', '#007acc')}
               >
-                {isPlacing ? '❌ Cancel' : '📍 Add'}
+                {isPlacing ? <><IconCancel /> Cancel</> : <><Icon360 /> Add 360</>}
               </button>
             )}
-            {!isPlacing && !isRotating && !isLinking && (
+            {!isMoving && !isRotating && !isLinking && !isPlacing && (
+              <button 
+                onClick={() => setIsPlacingProjectLink(!isPlacingProjectLink)}
+                style={mapControlButtonStyle(isPlacingProjectLink, '#d32f2f', '#9c27b0')}
+              >
+                {isPlacingProjectLink ? <><IconCancel /> Cancel</> : <><IconPortal /> Add Portal</>}
+              </button>
+            )}
+            {!isPlacing && !isPlacingProjectLink && !isRotating && !isLinking && (
               <button 
                 onClick={() => setIsMoving(!isMoving)}
-                style={mapControlButtonStyle(isMoving, '#28a745', '#1e1e1e')}
+                style={mapControlButtonStyle(isMoving, '#28a745', 'rgba(0,0,0,0.55)')}
               >
-                {isMoving ? '✅ Validate' : '✋ Move'}
+                {isMoving ? <><IconCheck /> Done</> : <><IconMove /> Move</>}
               </button>
             )}
-            {!isPlacing && !isMoving && !isLinking && (
+            {!isPlacing && !isPlacingProjectLink && !isMoving && !isLinking && (
               <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
                 <button 
                   onClick={() => setIsRotating(!isRotating)}
-                  style={mapControlButtonStyle(isRotating, '#28a745', '#1e1e1e')}
+                  style={mapControlButtonStyle(isRotating, '#28a745', 'rgba(0,0,0,0.55)')}
                 >
-                  {isRotating ? '✅ Validate' : '🔄 Rotate'}
+                  {isRotating ? <><IconCheck /> Done</> : <><IconRotate /> Rotate</>}
                 </button>
                 {isRotating && selectedSceneId && (
-                  <div style={{ display: 'flex', gap: '2px', boxShadow: '0 2px 6px rgba(0,0,0,0.5)', borderRadius: '4px', overflow: 'hidden' }}>
+                  <div style={{ display: 'flex', gap: '4px' }}>
                     <button 
                       onClick={() => rotateSelectedScene(-5)}
-                      style={{ padding: '8px 12px', cursor: 'pointer', backgroundColor: '#343a40', color: 'white', border: '1px solid #3d3d3d', borderRight: 'none' }}
-                      title="Tourner à gauche (Flèche gauche)"
+                      style={{ padding: '7px 11px', cursor: 'pointer', backgroundColor: 'rgba(0,0,0,0.6)', color: 'white', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '999px', backdropFilter: 'blur(8px)' }}
+                      title="Tourner à gauche"
                     >
                       ◀
                     </button>
                     <button 
                       onClick={() => rotateSelectedScene(5)}
-                      style={{ padding: '8px 12px', cursor: 'pointer', backgroundColor: '#343a40', color: 'white', border: '1px solid #3d3d3d' }}
-                      title="Tourner à droite (Flèche droite)"
+                      style={{ padding: '7px 11px', cursor: 'pointer', backgroundColor: 'rgba(0,0,0,0.6)', color: 'white', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '999px', backdropFilter: 'blur(8px)' }}
+                      title="Tourner à droite"
                     >
                       ▶
                     </button>
@@ -849,19 +1055,27 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, isExpa
                       setIsLinking(true);
                     }
                   }}
-                  style={mapControlButtonStyle(isLinking, '#28a745', '#1e1e1e')}
+                  style={mapControlButtonStyle(isLinking, '#28a745', 'rgba(0,0,0,0.55)')}
                 >
-                  {isLinking ? '✅ Validate' : '🔗 Path'}
+                  {isLinking ? <><IconCheck /> Done</> : <><IconPath /> Path</>}
                 </button>
                 {isLinking && (
                   <button 
                     onClick={() => setIsDeletingPath(!isDeletingPath)}
-                    style={mapControlButtonStyle(isDeletingPath, '#d32f2f', '#343a40')}
+                    style={mapControlButtonStyle(isDeletingPath, '#d32f2f', 'rgba(0,0,0,0.55)')}
                   >
                     {isDeletingPath ? '✍️ Link' : '🗑️ Delete'}
                   </button>
                 )}
               </div>
+            )}
+            {!isPlacing && !isPlacingProjectLink && !isMoving && !isRotating && !isLinking && (
+              <button
+                onClick={() => { setIsDeleting(!isDeleting); setDeleteConfirmSceneId(null); }}
+                style={mapControlButtonStyle(isDeleting, '#d32f2f', 'rgba(0,0,0,0.55)')}
+              >
+                {isDeleting ? <><IconCancel /> Cancel</> : <><IconTrash /> Delete</>}
+              </button>
             )}
             <input 
               type="file" 

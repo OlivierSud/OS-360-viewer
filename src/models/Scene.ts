@@ -16,4 +16,6 @@ export interface Scene {
   links: Link[];
   hotspots: Hotspot[];
   showTitleInViewer?: boolean;
+  type?: 'scene' | 'project-link';
+  targetProjectId?: string;
 }

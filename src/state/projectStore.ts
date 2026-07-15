@@ -25,6 +25,7 @@ interface ProjectState {
   setCurrentProjectId: (id: string | null) => void;
   setIsMovingHotspot: (val: boolean) => void;
   updateScene: (id: string, updates: Partial<Scene>) => void;
+  removeScene: (id: string) => void;
   addLink: (sourceId: string, targetId: string) => void;
   removeLink: (sourceId: string, targetId: string) => void;
   isAddingHotspot: boolean;
@@ -66,6 +67,20 @@ export const useProjectStore = create<ProjectState>((set) => ({
   }),
   selectScene: (id) => set({ selectedSceneId: id }),
   selectHotspot: (id) => set({ selectedHotspotId: id }),
+  removeScene: (id) => set((state) => {
+    // Remove the scene and all links pointing to it from other scenes
+    const newScenes = state.scenes
+      .filter(s => s.id !== id)
+      .map(s => ({
+        ...s,
+        links: s.links.filter(l => l.target !== id),
+      }));
+    return {
+      scenes: newScenes,
+      selectedSceneId: state.selectedSceneId === id ? null : state.selectedSceneId,
+      project: state.project ? { ...state.project, scenes: newScenes } : null,
+    };
+  }),
   setMode: (mode) => set({ mode }),
   setIsMovingHotspot: (val) => set({ isMovingHotspot: val }),
   setMapConfig: (mapConfig) => set((state) => {

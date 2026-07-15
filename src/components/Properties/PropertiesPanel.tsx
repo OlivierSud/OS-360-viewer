@@ -1,6 +1,6 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useProjectStore } from '../../state/projectStore';
-import { deleteCloudProject } from '../../services/cloudflareApi';
+import { deleteCloudProject, listCloudProjects } from '../../services/cloudflareApi';
 import { getViewerUrlForCurrentProject } from '../../services/projectCloudSave';
 import { createTrackedObjectUrl } from '../../services/mediaRegistry';
 import { createProjectId } from '../../storage/projectRegistry';
@@ -585,9 +585,15 @@ const HotspotPropertiesPanel: React.FC = () => {
   const selectHotspot = useProjectStore((state) => state.selectHotspot);
   const updateHotspot = useProjectStore((state) => state.updateHotspot);
   const removeHotspot = useProjectStore((state) => state.removeHotspot);
+  const updateScene = useProjectStore((state) => state.updateScene);
 
   const selectedScene = scenes.find(s => s.id === selectedSceneId);
   const selectedHotspot = selectedScene?.hotspots?.find(h => h.id === selectedHotspotId);
+
+  const [availableProjects, setAvailableProjects] = useState<any[]>([]);
+  useEffect(() => {
+    listCloudProjects().then(setAvailableProjects).catch(console.error);
+  }, []);
 
   const handleHotspotFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!selectedScene || !selectedHotspot) return;
@@ -608,15 +614,47 @@ const HotspotPropertiesPanel: React.FC = () => {
       <h2 style={{ margin: 0, fontSize: '1.2rem', borderBottom: '1px solid #333', paddingBottom: '10px' }}>Properties</h2>
 
       {selectedScene ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-          <div>
-            <h4 style={{ margin: '0 0 5px 0', color: '#888', fontSize: '0.8rem', textTransform: 'uppercase' }}>Viewpoint</h4>
-            <div style={{ fontWeight: 'bold', fontSize: '1rem' }}>{selectedScene.title}</div>
-            <div style={{ fontSize: '0.8rem', color: '#555', marginTop: '2px' }}>ID: {selectedScene.id}</div>
-          </div>
+        selectedScene.type === 'project-link' ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+            <div>
+              <h4 style={{ margin: '0 0 5px 0', color: '#888', fontSize: '0.8rem', textTransform: 'uppercase' }}>Project Link</h4>
+              <div style={{ fontSize: '0.8rem', color: '#555', marginTop: '2px' }}>ID: {selectedScene.id}</div>
+            </div>
 
-          <div style={{ borderTop: '1px solid #333', paddingTop: '15px' }}>
-            <h4 style={{ margin: '0 0 10px 0', color: '#888', fontSize: '0.8rem', textTransform: 'uppercase' }}>Hotspots</h4>
+            <Field label="Titre du lien">
+              <input
+                type="text"
+                value={selectedScene.title}
+                onChange={(e) => updateScene(selectedScene.id, { title: e.target.value })}
+                style={inputStyle}
+              />
+            </Field>
+
+            <Field label="Projet à charger">
+              <select
+                value={selectedScene.targetProjectId ?? ''}
+                onChange={(e) => updateScene(selectedScene.id, { targetProjectId: e.target.value })}
+                style={inputStyle}
+              >
+                <option value="">— Sélectionner un projet —</option>
+                {availableProjects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.title}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+            <div>
+              <h4 style={{ margin: '0 0 5px 0', color: '#888', fontSize: '0.8rem', textTransform: 'uppercase' }}>Viewpoint</h4>
+              <div style={{ fontWeight: 'bold', fontSize: '1rem' }}>{selectedScene.title}</div>
+              <div style={{ fontSize: '0.8rem', color: '#555', marginTop: '2px' }}>ID: {selectedScene.id}</div>
+            </div>
+
+            <div style={{ borderTop: '1px solid #333', paddingTop: '15px' }}>
+              <h4 style={{ margin: '0 0 10px 0', color: '#888', fontSize: '0.8rem', textTransform: 'uppercase' }}>Hotspots</h4>
 
             {selectedScene.hotspots && selectedScene.hotspots.length > 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', maxHeight: '150px', overflowY: 'auto', marginBottom: '15px', paddingRight: '5px' }}>
@@ -781,6 +819,7 @@ const HotspotPropertiesPanel: React.FC = () => {
             )}
           </div>
         </div>
+        )
       ) : (
         <div style={{ fontSize: '0.9rem', color: '#555', fontStyle: 'italic', textAlign: 'center', marginTop: '20px' }}>
           Sélectionnez un point de vue pour configurer ses propriétés.

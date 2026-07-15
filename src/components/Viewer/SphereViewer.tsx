@@ -4,6 +4,7 @@ import '@photo-sphere-viewer/core/index.css';
 import { MarkersPlugin } from '@photo-sphere-viewer/markers-plugin';
 import '@photo-sphere-viewer/markers-plugin/index.css';
 import { useProjectStore } from '../../state/projectStore';
+import { listCloudProjects } from '../../services/cloudflareApi';
 import type { Hotspot } from '../../models/Hotspot';
 
 function getYoutubeEmbedUrl(url: string): string | null {
@@ -34,6 +35,22 @@ const SphereViewer: React.FC = () => {
   // Which hotspot popup is currently open (rendered as an in-sphere marker)
   const [openHotspotId, setOpenHotspotId] = useState<string | null>(null);
   const [panoramaError, setPanoramaError] = useState<string | null>(null);
+  const [targetProjectTitle, setTargetProjectTitle] = useState<string | null>(null);
+  const [fullscreenImageUrl, setFullscreenImageUrl] = useState<string | null>(null);
+
+  // Resolve the name of the target project for project-link scenes
+  useEffect(() => {
+    if (selectedScene?.type === 'project-link' && selectedScene.targetProjectId) {
+      listCloudProjects()
+        .then(projects => {
+          const found = projects.find(p => p.id === selectedScene.targetProjectId);
+          setTargetProjectTitle(found?.title ?? selectedScene.targetProjectId ?? null);
+        })
+        .catch(() => setTargetProjectTitle(selectedScene.targetProjectId ?? null));
+    } else {
+      setTargetProjectTitle(null);
+    }
+  }, [selectedScene?.type, selectedScene?.targetProjectId]);
 
   const toggleMoveMode = () => {
     if (isMovingHotspot) {
@@ -141,7 +158,6 @@ const SphereViewer: React.FC = () => {
     markersPlugin.clearMarkers();
 
     // --- Global callbacks called from inside marker HTML ---
-
     markersPlugin.addEventListener('stop-dragging', (e: any) => {
       if (!isMovingHotspot) return;
       const hotspotId = e.marker.data?.hotspotId;
@@ -154,7 +170,18 @@ const SphereViewer: React.FC = () => {
     });
 
     (window as any).selectPSVScene = (targetId: string) => {
-      useProjectStore.getState().selectScene(targetId);
+      const state = useProjectStore.getState();
+      const targetScene = state.scenes.find(s => s.id === targetId);
+
+      // If the target is a project-link in viewer mode, navigate directly to the other project
+      if (state.mode === 'viewer' && targetScene?.type === 'project-link' && targetScene.targetProjectId) {
+        const url = new URL(window.location.href);
+        url.searchParams.set('id', targetScene.targetProjectId);
+        window.location.href = url.toString();
+        return;
+      }
+
+      state.selectScene(targetId);
     };
 
     (window as any).openPSVHotspot = (hotspotId: string) => {
@@ -164,6 +191,10 @@ const SphereViewer: React.FC = () => {
 
     (window as any).closePSVHotspot = () => {
       setOpenHotspotId(null);
+    };
+
+    (window as any).openPSVFullscreen = (url: string) => {
+      setFullscreenImageUrl(url);
     };
 
     // --- Navigation links ---
@@ -230,7 +261,7 @@ const SphereViewer: React.FC = () => {
           data: { hotspotId: hotspot.id }
         });
 
-        // Hotspot popup â€” placed slightly above the icon in spherical space
+        // Hotspot popup — placed slightly above the icon in spherical space
         if (isOpen) {
           const popupW = 300;
           // pitch offset: ~0.22 rad above so the card floats above the icon
@@ -268,7 +299,7 @@ const SphereViewer: React.FC = () => {
           } else if (hotspot.type === 'image') {
             if (hotspot.content) {
               contentHtml = `
-                <div style="border-radius:6px;overflow:hidden;margin-top:2px;">
+                <div style="border-radius:6px;overflow:hidden;margin-top:2px;position:relative;">
                   <img
                     src="${hotspot.content}"
                     alt="hotspot image"
@@ -276,6 +307,26 @@ const SphereViewer: React.FC = () => {
                     onerror="this.style.display='none';this.nextSibling.style.display='block';"
                   />
                   <p style="display:none;margin:0;font-size:0.82rem;color:#888;font-style:italic;">Image non disponible.</p>
+                  <button
+                    onclick="window.openPSVFullscreen('${hotspot.content.replace(/'/g, "\\'")}')"
+                    style="
+                      position:absolute;top:6px;right:6px;
+                      background:rgba(0,0,0,0.6);border:1px solid rgba(255,255,255,0.25);
+                      color:white;border-radius:6px;cursor:pointer;
+                      width:28px;height:28px;display:flex;align-items:center;justify-content:center;
+                      backdrop-filter:blur(4px);transition:background 0.15s;
+                    "
+                    title="Plein écran"
+                    onmouseover="this.style.background='rgba(255,255,255,0.2)'"
+                    onmouseout="this.style.background='rgba(0,0,0,0.6)'"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="15 3 21 3 21 9"></polyline>
+                      <polyline points="9 21 3 21 3 15"></polyline>
+                      <line x1="21" y1="3" x2="14" y2="10"></line>
+                      <line x1="3" y1="21" x2="10" y2="14"></line>
+                    </svg>
+                  </button>
                 </div>
               `;
             } else {
@@ -358,15 +409,12 @@ const SphereViewer: React.FC = () => {
 
     const handlePointerDown = (e: PointerEvent) => {
       const target = e.target as HTMLElement;
-      // When pointer-events: none is active, we check the element or look for a marker container
       const markerEl = target.closest('.psv-marker');
       if (markerEl) {
-        // Find the hotspot-marker container inside
         const innerEl = markerEl.querySelector('.psv-hotspot-marker');
         if (innerEl) {
           const hotspotId = innerEl.getAttribute('data-hotspot-id');
           if (hotspotId) {
-            // Only allow dragging if we are in moving mode
             if (isMovingHotspot) {
               dragHotspotId = hotspotId;
               useProjectStore.getState().selectHotspot(hotspotId);
@@ -388,7 +436,6 @@ const SphereViewer: React.FC = () => {
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
 
-      // Convert viewport/pixel coordinates inside container to spherical positions
       const spherical = viewerRef.current?.dataHelper.viewerCoordsToSphericalCoords({ x, y });
       if (spherical) {
         state.updateHotspot(state.selectedSceneId, dragHotspotId, {
@@ -419,18 +466,77 @@ const SphereViewer: React.FC = () => {
   }, [isMovingHotspot, addHotspotCursor]);
 
   useEffect(() => {
-    // We bind local state to window context or other stores if needed
     (window as any).__isMovingHotspot = isMovingHotspot;
     (window as any).__setIsMovingHotspot = setIsMovingHotspot;
-    
-    // Auto-select the currently active hotspot in store if we enter move mode
-    if (isMovingHotspot && selectedHotspotId) {
-      // already selected
-    }
   }, [isMovingHotspot, selectedHotspotId]);
+
+  // Close fullscreen on Escape key
+  useEffect(() => {
+    if (!fullscreenImageUrl) return;
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setFullscreenImageUrl(null); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [fullscreenImageUrl]);
 
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+      {/* Fullscreen image overlay */}
+      {fullscreenImageUrl && (
+        <div
+          onClick={() => setFullscreenImageUrl(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9999,
+            background: 'rgba(0,0,0,0.92)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backdropFilter: 'blur(6px)',
+            WebkitBackdropFilter: 'blur(6px)',
+            animation: 'fadeIn 0.18s ease',
+          }}
+        >
+          <img
+            src={fullscreenImageUrl}
+            alt="Plein écran"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxWidth: '92vw',
+              maxHeight: '92vh',
+              objectFit: 'contain',
+              borderRadius: '10px',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.8)',
+            }}
+          />
+          <button
+            onClick={() => setFullscreenImageUrl(null)}
+            style={{
+              position: 'fixed',
+              top: '20px',
+              right: '20px',
+              background: 'rgba(255,255,255,0.15)',
+              border: '1px solid rgba(255,255,255,0.25)',
+              backdropFilter: 'blur(8px)',
+              color: 'white',
+              borderRadius: '50%',
+              width: '40px',
+              height: '40px',
+              fontSize: '1.1rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'background 0.15s',
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.3)')}
+            onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.15)')}
+            title="Fermer (Echap)"
+          >
+            ✕
+          </button>
+        </div>
+      )}
       <div
         ref={containerRef}
         style={{
@@ -441,7 +547,33 @@ const SphereViewer: React.FC = () => {
         }}
       />
 
-      {panoramaError && (
+      {selectedScene?.type === 'project-link' && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 1500,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '16px',
+            background: '#141416',
+            color: '#fff',
+            fontFamily: 'system-ui, sans-serif',
+            textAlign: 'center',
+            padding: '24px',
+          }}
+        >
+          <span style={{ fontSize: '3.5rem', filter: 'drop-shadow(0 0 10px rgba(156,39,176,0.3))' }}>🔗</span>
+          <span style={{ fontSize: '1.3rem', fontWeight: 700, color: '#e0aaff' }}>{selectedScene.title || 'Lien Projet'}</span>
+          <span style={{ fontSize: '0.95rem', color: '#aaa', maxWidth: '320px', lineHeight: 1.4 }}>
+            Projet cible : <strong style={{ color: '#e0aaff' }}>{targetProjectTitle ?? '—'}</strong>
+          </span>
+        </div>
+      )}
+
+      {panoramaError && selectedScene?.type !== 'project-link' && (
         <div
           style={{
             position: 'absolute',
@@ -469,7 +601,7 @@ const SphereViewer: React.FC = () => {
       )}
 
       {/* Hotspot floating tools (editor only) */}
-      {selectedSceneId && mode === 'editor' && (
+      {selectedSceneId && selectedScene?.type !== 'project-link' && mode === 'editor' && (
         <div style={{ position: 'absolute', top: '15px', right: '15px', zIndex: 1000, display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <button
             onClick={() => {
@@ -513,9 +645,9 @@ const SphereViewer: React.FC = () => {
             {isMovingHotspot ? '✅ Validate Positions' : '⭕ Move Hotspot'}
           </button>
         </div>
-      )}    </div>
+      )}
+    </div>
   );
 };
 
 export default SphereViewer;
-

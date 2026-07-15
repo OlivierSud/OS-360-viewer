@@ -5,6 +5,7 @@ import Sidebar from '../components/Sidebar/Sidebar';
 import PropertiesPanel from '../components/Properties/PropertiesPanel';
 import SphereViewer from '../components/Viewer/SphereViewer';
 import ProjectMap from '../components/Map/ProjectMap';
+import ProjectSelectionScreen from '../components/Editor/ProjectSelectionScreen';
 
 type LayoutState = 'viewer-max' | 'split' | 'map-max';
 const ChevronIcon = ({ direction }: { direction: 'up' | 'down' }) => (
@@ -25,6 +26,7 @@ const EditorPage: React.FC = () => {
   const [layout, setLayout] = useState<LayoutState>('split');
   const [viewerHeight, setViewerHeight] = useState(60); // percent (15 to 85)
   const [isDragging, setIsDragging] = useState(false);
+  const [showHome, setShowHome] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -156,10 +158,11 @@ const EditorPage: React.FC = () => {
             </button>
           </div>
 
-        </div>
-        <PropertiesPanel />
       </div>
+      <PropertiesPanel />
+      {showHome && <ProjectSelectionScreen onClose={() => setShowHome(false)} />}
     </div>
+  </div>
   );
 };
 

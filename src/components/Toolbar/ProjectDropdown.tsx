@@ -3,14 +3,11 @@ import { createProjectId } from '../../storage/projectRegistry';
 import {
   createViewerUrl,
   deleteCloudProject,
-  listCloudProjects,
-  loadCloudProject,
   saveCloudProject,
-  type CloudProjectEntry,
 } from '../../services/cloudflareApi';
 import { uploadProjectAssetsToR2 } from '../../services/projectAssetUpload';
 import { useProjectStore } from '../../state/projectStore';
-import type { Project } from '../../models/Project';
+import { useProjectActions } from '../../hooks/useProjectActions';
 import PasswordGate from '../Viewer/PasswordGate';
 
 const ProjectViewerLink: React.FC<{ projectId: string }> = ({ projectId }) => {
@@ -69,124 +66,30 @@ const ProjectViewerLink: React.FC<{ projectId: string }> = ({ projectId }) => {
 const ProjectDropdown: React.FC = () => {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
-  const [cloudProjects, setCloudProjects] = useState<CloudProjectEntry[]>([]);
-  const [currentId, setCurrentIdState] = useState<string | null>(null);
-  const [syncStatus, setSyncStatus] = useState<string | null>(null);
-  const [isCloudBusy, setIsCloudBusy] = useState(false);
-  const [lockedProject, setLockedProject] = useState<{ id: string; data: Project } | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
   const storeProject = useProjectStore((s) => s.project);
-  const setProject = useProjectStore((s) => s.setProject);
+  const currentId = useProjectStore((s) => s.currentProjectId);
   const setCurrentProjectId = useProjectStore((s) => s.setCurrentProjectId);
-  const selectScene = useProjectStore((s) => s.selectScene);
 
-  const setCurrentId = useCallback((id: string | null) => {
-    setCurrentIdState(id);
-    setCurrentProjectId(id);
-  }, [setCurrentProjectId]);
+  const {
+    cloudProjects,
+    isBusy,
+    syncStatus,
+    setSyncStatus,
+    lockedProject,
+    setLockedProject,
+    refreshCloudList,
+    createAndOpen,
+    openCloudProject,
+    unlockLockedProject,
+  } = useProjectActions();
 
-  const createAndOpen = useCallback(() => {
-    const id = createProjectId();
-    const title = 'Nouveau Projet';
-    const blank: Project = {
-      version: 1,
-      project: { title, createdAt: new Date().toISOString() },
-      scenes: [],
-    };
-
-    setProject(blank);
-    setCurrentId(id);
-    setOpen(false);
-    setSyncStatus('Nouveau projet prêt à enregistrer sur Cloudflare');
-  }, [setCurrentId, setProject]);
-
-  const refreshCloudList = useCallback(async () => {
-    setIsCloudBusy(true);
-    try {
-      const entries = await listCloudProjects();
-      setCloudProjects(entries);
-      setSyncStatus(null);
-      return entries;
-    } catch (error) {
-      setSyncStatus(error instanceof Error ? error.message : 'Cloudflare indisponible');
-      return [];
-    } finally {
-      setIsCloudBusy(false);
-    }
-  }, []);
-
-  const openCloudProject = useCallback(async (id: string) => {
-    setIsCloudBusy(true);
-    try {
-      const record = await loadCloudProject(id);
-      // A protected project must be unlocked before it can be opened/edited.
-      if (record.project_data.project.passwordHash) {
-        setLockedProject({ id, data: record.project_data });
-        return;
-      }
-      setProject(record.project_data);
-      selectScene(record.project_data.project.defaultScene ?? record.project_data.scenes[0]?.id ?? null);
-      setCurrentId(id);
-      setOpen(false);
-      setSyncStatus('Projet chargé depuis Cloudflare');
-    } catch (error) {
-      setSyncStatus(error instanceof Error ? error.message : 'Chargement cloud impossible');
-    } finally {
-      setIsCloudBusy(false);
-    }
-  }, [selectScene, setCurrentId, setProject]);
-
-  const unlockLockedProject = useCallback(() => {
-    if (!lockedProject) return;
-    const { id, data } = lockedProject;
-    setProject(data);
-    selectScene(data.project.defaultScene ?? data.scenes[0]?.id ?? null);
-    setCurrentId(id);
-    setLockedProject(null);
-    setOpen(false);
-    setSyncStatus('Projet chargé depuis Cloudflare');
-  }, [lockedProject, selectScene, setCurrentId, setProject]);
-
-  const handleCloudSave = useCallback(async (): Promise<string | null> => {
-    if (!storeProject) return null;
-
-    const id = currentId ?? createProjectId();
-    const updatedProject: Project = {
-      ...storeProject,
-      project: { ...storeProject.project, updatedAt: new Date().toISOString() },
-    };
-
-    if (!currentId) setCurrentId(id);
-    setIsCloudBusy(true);
-    setSyncStatus('Upload des médias vers R2…');
-
-    try {
-      const projectWithUploadedAssets = await uploadProjectAssetsToR2(updatedProject, id);
-      setSyncStatus('Enregistrement sur Cloudflare…');
-      await saveCloudProject({ id, project: projectWithUploadedAssets });
-      setProject(projectWithUploadedAssets);
-      await refreshCloudList();
-      setSyncStatus('Projet enregistré sur Cloudflare');
-      return id;
-    } catch (error) {
-      setSyncStatus(error instanceof Error ? error.message : 'Sauvegarde Cloudflare impossible');
-      return null;
-    } finally {
-      setIsCloudBusy(false);
-    }
-  }, [currentId, refreshCloudList, setCurrentId, setProject, storeProject]);
-
+  // Populate the cloud list when the dropdown is first shown (no auto-open).
   useEffect(() => {
-    void refreshCloudList().then((entries) => {
-      if (entries.length > 0) {
-        void openCloudProject(entries[0].id);
-      } else {
-        createAndOpen();
-      }
-    });
-  }, [createAndOpen, openCloudProject, refreshCloudList]);
+    if (open) void refreshCloudList();
+  }, [open, refreshCloudList]);
 
   useEffect(() => {
     const handler = (event: MouseEvent) => {
@@ -203,13 +106,35 @@ const ProjectDropdown: React.FC = () => {
   }, [open]);
 
   useEffect(() => {
-    const refreshProjects = () => {
-      void refreshCloudList();
-    };
-
+    const refreshProjects = () => { void refreshCloudList(); };
     window.addEventListener('cloud-projects-changed', refreshProjects);
     return () => window.removeEventListener('cloud-projects-changed', refreshProjects);
   }, [refreshCloudList]);
+
+  const handleCloudSave = useCallback(async (): Promise<string | null> => {
+    if (!storeProject) return null;
+
+    const id = currentId ?? createProjectId();
+    const updatedProject = {
+      ...storeProject,
+      project: { ...storeProject.project, updatedAt: new Date().toISOString() },
+    };
+
+    if (!currentId) setCurrentProjectId(id);
+    setSyncStatus('Upload des médias vers R2…');
+
+    try {
+      const projectWithUploadedAssets = await uploadProjectAssetsToR2(updatedProject, id);
+      setSyncStatus('Enregistrement sur Cloudflare…');
+      await saveCloudProject({ id, project: projectWithUploadedAssets });
+      setSyncStatus('Projet enregistré sur Cloudflare');
+      await refreshCloudList();
+      return id;
+    } catch (error) {
+      setSyncStatus(error instanceof Error ? error.message : 'Sauvegarde Cloudflare impossible');
+      return null;
+    }
+  }, [currentId, refreshCloudList, setCurrentProjectId, setSyncStatus, storeProject]);
 
   useEffect(() => {
     (window as any).__saveCurrentProject = handleCloudSave;
@@ -223,7 +148,7 @@ const ProjectDropdown: React.FC = () => {
     project.title.toLowerCase().includes(search.toLowerCase())
   );
 
-  const currentTitle = storeProject?.project?.title ?? 'Projects';
+  const currentTitle = storeProject?.project?.title ?? 'Projets';
 
   const btn: React.CSSProperties = {
     display: 'flex',
@@ -336,7 +261,7 @@ const ProjectDropdown: React.FC = () => {
           )}
 
           <div style={{ maxHeight: '260px', overflowY: 'auto' }}>
-            {isCloudBusy ? (
+            {isBusy ? (
               <div style={{ padding: '14px', color: '#555', fontStyle: 'italic', fontSize: '0.85rem', textAlign: 'center' }}>
                 Synchronisation Cloudflare…
               </div>
@@ -363,24 +288,24 @@ const ProjectDropdown: React.FC = () => {
                   >
                     <div
                       style={{ flex: 1, overflow: 'hidden' }}
-                      onClick={() => void openCloudProject(project.id)}
+                      onClick={() => void openCloudProject(project.id).then((locked) => { if (!locked) setOpen(false); })}
                     >
-                       <div
-                         style={{
-                           fontWeight: isActive ? 600 : 400,
-                           fontSize: '0.88rem',
-                           color: 'white',
-                           overflow: 'hidden',
-                           textOverflow: 'ellipsis',
-                           whiteSpace: 'nowrap',
-                           display: 'flex',
-                           alignItems: 'center',
-                           gap: '6px',
-                         }}
-                       >
-                         {project.passwordHash ? <span title="Projet protégé par mot de passe">🔒</span> : null}
-                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{project.title}</span>
-                       </div>
+                      <div
+                        style={{
+                          fontWeight: isActive ? 600 : 400,
+                          fontSize: '0.88rem',
+                          color: 'white',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                        }}
+                      >
+                        {project.passwordHash ? <span title="Projet protégé par mot de passe">🔒</span> : null}
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{project.title}</span>
+                      </div>
                       <ProjectViewerLink projectId={project.id} />
                       <div style={{ fontSize: '0.72rem', color: '#666', marginTop: '2px' }}>
                         {new Date(project.updated_at).toLocaleDateString('fr-FR', {
@@ -426,7 +351,7 @@ const ProjectDropdown: React.FC = () => {
 
           <div style={{ borderTop: '1px solid #333', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <button
-              onClick={createAndOpen}
+              onClick={() => { createAndOpen(); setOpen(false); }}
               style={{
                 width: '100%',
                 padding: '7px',

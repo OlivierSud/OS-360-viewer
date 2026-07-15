@@ -46,9 +46,26 @@ export default {
     // ── GET /api/projects — list all projects ──────────────────────────────
     if (request.method === 'GET' && path === '/api/projects') {
       const { results } = await env.DB.prepare(
-        'SELECT id, title, author, description, splash_url, updated_at FROM projects ORDER BY updated_at DESC'
+        'SELECT id, title, author, description, splash_url, project_data, updated_at FROM projects ORDER BY updated_at DESC'
       ).all();
-      return json(results, 200, origin);
+      // Derive the protection flag from the stored project_data (no schema change needed)
+      const list = results.map((r) => {
+        let passwordHash = null;
+        try {
+          const data = JSON.parse(r.project_data);
+          passwordHash = data?.project?.passwordHash ?? null;
+        } catch { /* keep null if project_data is invalid */ }
+        return {
+          id: r.id,
+          title: r.title,
+          author: r.author,
+          description: r.description,
+          splash_url: r.splash_url,
+          updated_at: r.updated_at,
+          passwordHash,
+        };
+      });
+      return json(list, 200, origin);
     }
 
     // ── GET /api/projects/:id — load one project ───────────────────────────

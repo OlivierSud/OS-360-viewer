@@ -30,6 +30,8 @@ interface ProjectState {
   removeLink: (sourceId: string, targetId: string) => void;
   isAddingHotspot: boolean;
   setIsAddingHotspot: (val: boolean) => void;
+  isDeletingHotspot: boolean;
+  setIsDeletingHotspot: (val: boolean) => void;
   addHotspot: (sceneId: string, hotspot: Hotspot) => void;
   updateHotspot: (sceneId: string, hotspotId: string, updates: Partial<Hotspot>) => void;
   removeHotspot: (sceneId: string, hotspotId: string) => void;
@@ -221,6 +223,8 @@ export const useProjectStore = create<ProjectState>((set) => ({
   }),
   isAddingHotspot: false,
   setIsAddingHotspot: (val) => set({ isAddingHotspot: val }),
+  isDeletingHotspot: false,
+  setIsDeletingHotspot: (val) => set({ isDeletingHotspot: val }),
   showProjectSettings: false,
   setShowProjectSettings: (val) => set({ showProjectSettings: val }),
   updateProjectTitle: (title) => set((state) => ({

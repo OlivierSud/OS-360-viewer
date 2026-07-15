@@ -21,6 +21,87 @@ const SphereViewer: React.FC = () => {
   const viewerRef = useRef<Viewer | null>(null);
   const addHotspotCursor = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Ctext x='16' y='22' text-anchor='middle' font-size='22'%3E%E2%AD%95%3C/text%3E%3C/svg%3E") 16 16, crosshair`;
 
+  // Same pill button style as the map editor controls (Add 360 / Move)
+  const mapControlButtonStyle = (
+    isActive: boolean,
+    activeColor = '#d32f2f',
+    inactiveColor = 'rgba(0,0,0,0.55)',
+  ): React.CSSProperties => ({
+    width: '130px',
+    padding: '7px 14px 7px 10px',
+    cursor: 'pointer',
+    backgroundColor: isActive ? activeColor : inactiveColor,
+    color: 'white',
+    border: isActive ? `1px solid ${activeColor}` : '1px solid rgba(255,255,255,0.12)',
+    borderRadius: '999px',
+    fontSize: '0.78rem',
+    fontWeight: 600,
+    letterSpacing: '0.02em',
+    boxShadow: isActive
+      ? `0 0 0 2px ${activeColor}55, 0 4px 12px rgba(0,0,0,0.5)`
+      : '0 2px 8px rgba(0,0,0,0.4)',
+    backdropFilter: 'blur(8px)',
+    WebkitBackdropFilter: 'blur(8px)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    gap: '7px',
+    transition: 'all 0.18s ease',
+    whiteSpace: 'nowrap',
+    userSelect: 'none',
+  });
+
+  const IconPlus = () => (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+  );
+
+  const IconMove = () => (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="5 9 2 12 5 15" />
+      <polyline points="9 5 12 2 15 5" />
+      <polyline points="15 19 12 22 9 19" />
+      <polyline points="19 9 22 12 19 15" />
+      <line x1="2" y1="12" x2="22" y2="12" />
+      <line x1="12" y1="2" x2="12" y2="22" />
+    </svg>
+  );
+
+  const IconTrash = () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="3 6 5 6 21 6" />
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+      <path d="M10 11v6" />
+      <path d="M14 11v6" />
+      <path d="M9 6V4h6v2" />
+    </svg>
+  );
+
+  // Returns a uniform-size (18px) white SVG icon string for a hotspot type.
+  const hotspotIconSvg = (type: string): string => {
+    const open =
+      '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">';
+    if (type === 'video') {
+      return open + '<polygon points="6 4 20 12 6 20 6 4"></polygon></svg>';
+    }
+    if (type === 'image') {
+      return (
+        open +
+        '<rect x="3" y="3" width="18" height="18" rx="2"></rect>' +
+        '<circle cx="8.5" cy="8.5" r="1.5"></circle>' +
+        '<polyline points="21 15 16 10 5 21"></polyline></svg>'
+      );
+    }
+    return (
+      open +
+      '<line x1="12" y1="16" x2="12" y2="12"></line>' +
+      '<line x1="12" y1="8" x2="12.01" y2="8"></line>' +
+      '<circle cx="12" cy="12" r="9"></circle></svg>'
+    );
+  };
+
   const selectedSceneId = useProjectStore((state) => state.selectedSceneId);
   const selectedHotspotId = useProjectStore((state) => state.selectedHotspotId);
   const scenes = useProjectStore((state) => state.scenes);
@@ -29,6 +110,8 @@ const SphereViewer: React.FC = () => {
   const mode = useProjectStore((state) => state.mode);
   const isMovingHotspot = useProjectStore((state) => state.isMovingHotspot);
   const setIsMovingHotspot = useProjectStore((state) => state.setIsMovingHotspot);
+  const isDeletingHotspot = useProjectStore((state) => state.isDeletingHotspot);
+  const setIsDeletingHotspot = useProjectStore((state) => state.setIsDeletingHotspot);
 
   const selectedScene = scenes.find(s => s.id === selectedSceneId);
 
@@ -87,11 +170,18 @@ const SphereViewer: React.FC = () => {
       viewerRef.current.addEventListener('click', (e: any) => {
         const state = useProjectStore.getState();
         const moving = state.isMovingHotspot;
-        if (moving) {
+        const deleting = state.isDeletingHotspot;
+        if (moving || deleting) {
           const hotspotId = e.marker?.data?.hotspotId;
-          if (hotspotId) state.selectHotspot(hotspotId);
-          e.preventDefault();
-          return;
+          if (hotspotId) {
+            if (deleting) {
+              if (state.selectedSceneId) state.removeHotspot(state.selectedSceneId, hotspotId);
+            } else {
+              state.selectHotspot(hotspotId);
+            }
+            e.preventDefault();
+            return;
+          }
         }
 
         // Click on empty sphere while in "Add Hotspot" mode -> create a hotspot
@@ -124,7 +214,12 @@ const SphereViewer: React.FC = () => {
         if (data.target) {
           useProjectStore.getState().selectScene(data.target);
         } else if (data.hotspotId) {
-          useProjectStore.getState().selectHotspot(data.hotspotId);
+          const state = useProjectStore.getState();
+          if (state.isDeletingHotspot) {
+            if (state.selectedSceneId) state.removeHotspot(state.selectedSceneId, data.hotspotId);
+            return;
+          }
+          state.selectHotspot(data.hotspotId);
           setOpenHotspotId(data.hotspotId);
         }
       });
@@ -214,8 +309,8 @@ const SphereViewer: React.FC = () => {
                   ${targetScene.title}
                 </div>
               ` : ''}
-              <div style="width:36px;height:36px;background:rgba(255,255,255,0.95);border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 8px rgba(0,0,0,0.5);margin:0 auto;transition:transform 0.2s;">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#007acc" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+              <div style="width:34px;height:34px;background:rgba(255,255,255,0.95);border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 8px rgba(0,0,0,0.5);margin:0 auto;transition:transform 0.2s;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#007acc" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
                   <polyline points="18 15 12 9 6 15"></polyline>
                 </svg>
               </div>
@@ -231,21 +326,137 @@ const SphereViewer: React.FC = () => {
       selectedScene.hotspots.forEach((hotspot) => {
         const isOpen = hotspot.id === openHotspotId;
         const isSelectedMove = isMovingHotspot && hotspot.id === selectedHotspotId;
-        const icon = hotspot.type === 'video' ? '🎥' : hotspot.type === 'image' ? '🖼️' : 'ℹ️';
         const accentColor = hotspot.type === 'video' ? '#e50914' : hotspot.type === 'image' ? '#6a0dad' : '#007acc';
         const embedUrl = hotspot.type === 'video' ? getYoutubeEmbedUrl(hotspot.content) : null;
 
-        // Icon marker (always visible)
+        // Icon marker (always visible). The popup is embedded as a CSS-positioned
+        // child so it always floats a FIXED pixel distance above the icon — constant
+        // regardless of the hotspot's position on the sphere or the card's height.
+        let contentHtml = '';
+        if (hotspot.type === 'video') {
+          if (embedUrl) {
+            // YouTube Video
+            contentHtml = `
+              <div style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;border-radius:6px;margin-top:2px;">
+                <iframe
+                  src="${embedUrl}?autoplay=1"
+                  style="position:absolute;top:0;left:0;width:100%;height:100%;border:none;"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowfullscreen
+                ></iframe>
+              </div>
+            `;
+          } else {
+            // Local/Direct Video
+            contentHtml = `
+              <div style="margin-top:2px; border-radius:6px; overflow:hidden; background:#000;">
+                <video
+                  src="${hotspot.content}"
+                  controls
+                  autoplay
+                  style="width:100%; display:block;"
+                >
+                  Your browser does not support the video tag.
+                </video>
+              </div>
+            `;
+          }
+        } else if (hotspot.type === 'image') {
+          if (hotspot.content) {
+            contentHtml = `
+              <div style="border-radius:6px;overflow:hidden;margin-top:2px;position:relative;">
+                <img
+                  src="${hotspot.content}"
+                  alt="hotspot image"
+                  style="width:100%;max-height:200px;object-fit:contain;display:block;background:#111;"
+                  onerror="this.style.display='none';this.nextSibling.style.display='block';"
+                />
+                <p style="display:none;margin:0;font-size:0.82rem;color:#888;font-style:italic;">Image non disponible.</p>
+                <button
+                  onclick="window.openPSVFullscreen('${hotspot.content.replace(/'/g, "\\'")}')"
+                  style="
+                    position:absolute;top:6px;right:6px;
+                    background:rgba(0,0,0,0.6);border:1px solid rgba(255,255,255,0.25);
+                    color:white;border-radius:6px;cursor:pointer;
+                    width:28px;height:28px;display:flex;align-items:center;justify-content:center;
+                    backdrop-filter:blur(4px);transition:background 0.15s;
+                  "
+                  title="Plein écran"
+                  onmouseover="this.style.background='rgba(255,255,255,0.2)'"
+                  onmouseout="this.style.background='rgba(0,0,0,0.6)'"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="15 3 21 3 21 9"></polyline>
+                    <polyline points="9 21 3 21 3 15"></polyline>
+                    <line x1="21" y1="3" x2="14" y2="10"></line>
+                    <line x1="3" y1="21" x2="10" y2="14"></line>
+                  </svg>
+                </button>
+              </div>
+            `;
+          } else {
+            contentHtml = `<p style="margin:0;font-size:0.82rem;color:#888;font-style:italic;">Aucune image configurée. Éditez dans le panneau de droite.</p>`;
+          }
+        } else {
+          // Escape HTML entities in text content
+          const safe = hotspot.content.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+          contentHtml = `<p style="margin:0;font-size:0.88rem;line-height:1.55;white-space:pre-wrap;color:#ddd;">${safe}</p>`;
+        }
+
+        const popupHtml = isOpen ? `
+          <div class="psv-hotspot-popup" onclick="event.stopPropagation();" style="
+            position:absolute;
+            bottom: calc(100% + 14px);
+            left:50%;
+            transform: translateX(-50%);
+            width:300px;
+            background:rgba(14,14,16,0.92);
+            backdrop-filter:blur(12px);
+            -webkit-backdrop-filter:blur(12px);
+            border:1px solid rgba(255,255,255,0.12);
+            border-radius:10px;
+            padding:11px 13px;
+            box-shadow:0 8px 28px rgba(0,0,0,0.65);
+            color:white;
+            display:flex;flex-direction:column;gap:8px;
+            pointer-events:auto;
+            font-family: system-ui, sans-serif;
+          ">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+              <span style="font-size:0.92rem;font-weight:600;color:#fff;">
+                ${hotspot.title
+                  ? hotspot.title.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+                  : (hotspot.type === 'video' ? '🎥 Vidéo' : hotspot.type === 'image' ? '🖼️ Image' : 'ℹ️ Info')}
+              </span>
+              <button
+                onclick="event.stopPropagation();window.closePSVHotspot()"
+                style="background:none;border:none;color:#666;font-size:1rem;cursor:pointer;padding:2px 5px;border-radius:3px;line-height:1;flex-shrink:0;"
+              >✕</button>
+            </div>
+            ${contentHtml}
+            <!-- Triangle pointer toward the icon below -->
+            <div style="
+              position:absolute;bottom:-7px;left:50%;transform:translateX(-50%);
+              width:0;height:0;
+              border-left:7px solid transparent;
+              border-right:7px solid transparent;
+              border-top:7px solid rgba(14,14,16,0.92);
+            "></div>
+          </div>
+        ` : '';
+
         markersPlugin.addMarker({
           id: hotspot.id,
           position: { yaw: hotspot.yaw, pitch: hotspot.pitch },
           draggable: false, // Disabling Photo-Sphere-Viewer native dragging as we handle it ourselves
+          zIndex: isOpen ? 1000 : 1,
           html: `
             <div
               id="marker-${hotspot.id}"
               class="psv-hotspot-marker"
               data-hotspot-id="${hotspot.id}"
               style="
+                position:relative;
                 width:34px;height:34px;
                 background:${accentColor};
                 color:white;border:2.5px solid white;
@@ -256,132 +467,10 @@ const SphereViewer: React.FC = () => {
                 transition: transform 0.15s;
                 ${isOpen ? 'outline: 2px solid white; outline-offset: 2px;' : ''}
               "
-            >${icon}</div>
+            >${hotspotIconSvg(hotspot.type)}${popupHtml}</div>
           `,
           data: { hotspotId: hotspot.id }
         });
-
-        // Hotspot popup — placed slightly above the icon in spherical space
-        if (isOpen) {
-          const popupW = 300;
-          // pitch offset: ~0.22 rad above so the card floats above the icon
-          const popupPitch = hotspot.pitch + 0.22;
-
-          let contentHtml = '';
-          if (hotspot.type === 'video') {
-            if (embedUrl) {
-              // YouTube Video
-              contentHtml = `
-                <div style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;border-radius:6px;margin-top:2px;">
-                  <iframe
-                    src="${embedUrl}?autoplay=1"
-                    style="position:absolute;top:0;left:0;width:100%;height:100%;border:none;"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                    allowfullscreen
-                  ></iframe>
-                </div>
-              `;
-            } else {
-              // Local/Direct Video
-              contentHtml = `
-                <div style="margin-top:2px; border-radius:6px; overflow:hidden; background:#000;">
-                  <video
-                    src="${hotspot.content}"
-                    controls
-                    autoplay
-                    style="width:100%; display:block;"
-                  >
-                    Your browser does not support the video tag.
-                  </video>
-                </div>
-              `;
-            }
-          } else if (hotspot.type === 'image') {
-            if (hotspot.content) {
-              contentHtml = `
-                <div style="border-radius:6px;overflow:hidden;margin-top:2px;position:relative;">
-                  <img
-                    src="${hotspot.content}"
-                    alt="hotspot image"
-                    style="width:100%;max-height:200px;object-fit:contain;display:block;background:#111;"
-                    onerror="this.style.display='none';this.nextSibling.style.display='block';"
-                  />
-                  <p style="display:none;margin:0;font-size:0.82rem;color:#888;font-style:italic;">Image non disponible.</p>
-                  <button
-                    onclick="window.openPSVFullscreen('${hotspot.content.replace(/'/g, "\\'")}')"
-                    style="
-                      position:absolute;top:6px;right:6px;
-                      background:rgba(0,0,0,0.6);border:1px solid rgba(255,255,255,0.25);
-                      color:white;border-radius:6px;cursor:pointer;
-                      width:28px;height:28px;display:flex;align-items:center;justify-content:center;
-                      backdrop-filter:blur(4px);transition:background 0.15s;
-                    "
-                    title="Plein écran"
-                    onmouseover="this.style.background='rgba(255,255,255,0.2)'"
-                    onmouseout="this.style.background='rgba(0,0,0,0.6)'"
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                      <polyline points="15 3 21 3 21 9"></polyline>
-                      <polyline points="9 21 3 21 3 15"></polyline>
-                      <line x1="21" y1="3" x2="14" y2="10"></line>
-                      <line x1="3" y1="21" x2="10" y2="14"></line>
-                    </svg>
-                  </button>
-                </div>
-              `;
-            } else {
-              contentHtml = `<p style="margin:0;font-size:0.82rem;color:#888;font-style:italic;">Aucune image configurée. Éditez dans le panneau de droite.</p>`;
-            }
-          } else {
-            // Escape HTML entities in text content
-            const safe = hotspot.content.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-            contentHtml = `<p style="margin:0;font-size:0.88rem;line-height:1.55;white-space:pre-wrap;color:#ddd;">${safe}</p>`;
-          }
-
-          markersPlugin.addMarker({
-            id: `popup-${hotspot.id}`,
-            position: { yaw: hotspot.yaw, pitch: popupPitch },
-            zIndex: 1000,
-            html: `
-              <div style="
-                width:${popupW}px;
-                background:rgba(14,14,16,0.92);
-                backdrop-filter:blur(12px);
-                -webkit-backdrop-filter:blur(12px);
-                border:1px solid rgba(255,255,255,0.12);
-                border-radius:10px;
-                padding:11px 13px;
-                box-shadow:0 8px 28px rgba(0,0,0,0.65);
-                color:white;
-                display:flex;flex-direction:column;gap:8px;
-                position:relative;
-                font-family: system-ui, sans-serif;
-              ">
-                <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-                  <span style="font-size:0.92rem;font-weight:600;color:#fff;">
-                    ${hotspot.title
-                      ? hotspot.title.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-                      : (hotspot.type === 'video' ? '🎥 Vidéo' : hotspot.type === 'image' ? '🖼️ Image' : 'ℹ️ Info')}
-                  </span>
-                  <button
-                    onclick="window.closePSVHotspot()"
-                    style="background:none;border:none;color:#666;font-size:1rem;cursor:pointer;padding:2px 5px;border-radius:3px;line-height:1;flex-shrink:0;"
-                  >✕</button>
-                </div>
-                ${contentHtml}
-                <!-- Triangle pointer toward the icon below -->
-                <div style="
-                  position:absolute;bottom:-7px;left:50%;transform:translateX(-50%);
-                  width:0;height:0;
-                  border-left:7px solid transparent;
-                  border-right:7px solid transparent;
-                  border-top:7px solid rgba(14,14,16,0.92);
-                "></div>
-              </div>
-            `,
-            data: {}
-          });
-        }
       });
     }
   }, [selectedScene?.links, selectedScene?.hotspots, scenes, openHotspotId]);
@@ -410,6 +499,8 @@ const SphereViewer: React.FC = () => {
     const handlePointerDown = (e: PointerEvent) => {
       const target = e.target as HTMLElement;
       const markerEl = target.closest('.psv-marker');
+      // Ignore presses on the popup card so its buttons work and never start a drag
+      if (markerEl && target.closest('.psv-hotspot-popup')) return;
       if (markerEl) {
         const innerEl = markerEl.querySelector('.psv-hotspot-marker');
         if (innerEl) {
@@ -600,49 +691,36 @@ const SphereViewer: React.FC = () => {
         </div>
       )}
 
-      {/* Hotspot floating tools (editor only) */}
+      {/* Hotspot floating tools (editor only) — same pill style as the map controls */}
       {selectedSceneId && selectedScene?.type !== 'project-link' && mode === 'editor' && (
-        <div style={{ position: 'absolute', top: '15px', right: '15px', zIndex: 1000, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', zIndex: 1000, display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <button
             onClick={() => {
               setIsAddingHotspot(!isAddingHotspot);
               setIsMovingHotspot(false);
             }}
-            style={{
-              padding: '8px 14px',
-              backgroundColor: isAddingHotspot ? '#d32f2f' : '#252526',
-              color: 'white',
-              border: '1px solid #3d3d3d',
-              borderRadius: '4px',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
-              cursor: 'pointer',
-              fontSize: '0.85rem',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              transition: 'background-color 0.2s'
-            }}
+            title="Ajouter un hotspot"
+            style={mapControlButtonStyle(isAddingHotspot, '#d32f2f', '#007acc')}
           >
-            {isAddingHotspot ? '❌ Cancel' : '➕ Add Hotspot'}
+            <IconPlus /> Add Hotspot
           </button>
           <button
             onClick={toggleMoveMode}
-            style={{
-              padding: '8px 14px',
-              backgroundColor: isMovingHotspot ? '#2e7d32' : '#252526',
-              color: 'white',
-              border: '1px solid #3d3d3d',
-              borderRadius: '4px',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
-              cursor: 'pointer',
-              fontSize: '0.85rem',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              transition: 'background-color 0.2s'
-            }}
+            title="Déplacer un hotspot"
+            style={mapControlButtonStyle(isMovingHotspot, '#28a745', 'rgba(0,0,0,0.55)')}
           >
-            {isMovingHotspot ? '✅ Validate Positions' : '⭕ Move Hotspot'}
+            <IconMove /> Move Hotspot
+          </button>
+          <button
+            onClick={() => {
+              setIsDeletingHotspot(!isDeletingHotspot);
+              setIsAddingHotspot(false);
+              setIsMovingHotspot(false);
+            }}
+            title="Supprimer un hotspot"
+            style={mapControlButtonStyle(isDeletingHotspot, '#d32f2f', 'rgba(189, 1, 1, 0.76)')}
+          >
+            <IconTrash /> Delete Hotspot
           </button>
         </div>
       )}

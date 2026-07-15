@@ -37,7 +37,7 @@ const Toolbar: React.FC = () => {
     }
   };
 
-  const handleExport = async () => {
+  const handleCopyLink = async () => {
     if (typeof (window as any).__exportCurrentProject !== 'function') return;
 
     const viewerUrl = await (window as any).__exportCurrentProject();
@@ -186,14 +186,17 @@ const Toolbar: React.FC = () => {
         </button>
 
         <button
-          onClick={() => void handleExport()}
+          title="Copier le lien de la visionneuse"
+          onClick={() => void handleCopyLink()}
           style={toolBtn({
+            padding: '5px 9px',
+            fontSize: '1rem',
             background: exportFlash ? '#1f4f7a' : '#2d2d2d',
             color: exportFlash ? '#bbdefb' : 'white',
             borderColor: exportFlash ? '#2196f3' : '#444',
           })}
         >
-          {exportFlash ? '✓ Lien copié' : '📤 Export'}
+          {exportFlash ? '✓' : '🔗'}
         </button>
       </div>
     </header>

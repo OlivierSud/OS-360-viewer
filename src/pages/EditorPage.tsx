@@ -142,7 +142,7 @@ const EditorPage: React.FC = () => {
             position: 'relative',
             flexShrink: 0
           }}>
-            <ProjectMap />
+            <ProjectMap isExpanded={layout === 'map-max'} />
             <button 
               onClick={() => setLayout(layout === 'map-max' ? 'split' : 'map-max')}
               style={{ 

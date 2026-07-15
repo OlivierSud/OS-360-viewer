@@ -298,6 +298,21 @@ const ProjectSettingsPanel: React.FC = () => {
             style={inputStyle}
           />
         </Field>
+
+        <Field label="Temps d'affichage minimum (en secondes)">
+          <input
+            type="number"
+            min="0"
+            step="0.5"
+            value={meta.splashDuration ?? 0}
+            onChange={(e) => {
+              const val = parseFloat(e.target.value);
+              updateMeta({ splashDuration: isNaN(val) ? 0 : val });
+            }}
+            placeholder="0"
+            style={inputStyle}
+          />
+        </Field>
       </div>
 
       {/* ── Plan de travail (map) ── */}

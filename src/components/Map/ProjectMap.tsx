@@ -6,15 +6,61 @@ import { useProjectStore } from '../../state/projectStore';
 import type { Scene } from '../../models/Scene';
 import { createTrackedObjectUrl } from '../../services/mediaRegistry';
 
-const FitBounds: React.FC<{ bounds: L.LatLngBoundsExpression }> = ({ bounds }) => {
+const FitBounds: React.FC<{ bounds: L.LatLngBoundsExpression; isExpanded?: boolean }> = ({ bounds }) => {
   const map = useMap();
   useEffect(() => {
-    map.fitBounds(bounds, { padding: [10, 10] });
-    // Prevent zooming out beyond the point where the whole plan fits the view
-    const fitZoom = map.getBoundsZoom(bounds, false);
-    map.setMinZoom(fitZoom);
-    map.setMaxZoom(Math.max(2, fitZoom + 4));
+    // Calculate fitZoom with a safety padding
+    const fitZoom = map.getBoundsZoom(bounds, false, L.point(30, 30));
+    // Allow zooming out 3 levels further than the fit zoom to see the surroundings
+    const minZoomLevel = fitZoom - 3;
+    map.setMinZoom(minZoomLevel);
+    map.setMaxZoom(Math.max(2, fitZoom + 2));
+    
+    const center = L.latLngBounds(bounds as any).getCenter();
+    // Always start fitted perfectly to the container bounds
+    map.setView(center, fitZoom);
   }, [map, bounds]);
+  return null;
+};
+
+const FitGeoBounds: React.FC<{ scenes: Scene[]; isExpanded?: boolean }> = ({ scenes }) => {
+  const map = useMap();
+  useEffect(() => {
+    if (scenes.length === 0) {
+      map.setMinZoom(1);
+      map.setMaxZoom(18);
+      return;
+    }
+
+    const lats = scenes.map(s => s.position.y);
+    const lons = scenes.map(s => s.position.x);
+    
+    const minLat = Math.min(...lats);
+    const maxLat = Math.max(...lats);
+    const minLon = Math.min(...lons);
+    const maxLon = Math.max(...lons);
+
+    // If there is only one viewpoint, or all viewpoints are at the same spot
+    if (minLat === maxLat && minLon === maxLon) {
+      map.setView([minLat, minLon], 15);
+      map.setMinZoom(8);
+      map.setMaxZoom(17);
+      return;
+    }
+
+    const bounds = L.latLngBounds([minLat, minLon], [maxLat, maxLon]);
+    const fitZoom = map.getBoundsZoom(bounds, false, L.point(50, 50));
+    // Allow zooming out 5 levels further than the viewpoints bounds for geographic map
+    const minZoomLevel = Math.max(1, fitZoom - 5);
+    // Don't zoom in closer than fitZoom + 2, cap at 17 to prevent zooming into empty space
+    const maxZoomLevel = Math.min(17, Math.max(12, fitZoom + 2));
+
+    map.setMinZoom(minZoomLevel);
+    map.setMaxZoom(maxZoomLevel);
+    
+    // Always start fitted perfectly to the container bounds
+    map.setView(bounds.getCenter(), fitZoom);
+  }, [map, scenes]);
   return null;
 };
 
@@ -29,8 +75,8 @@ const CenterOnSelected: React.FC = () => {
   const firstRun = useRef(true);
 
   useEffect(() => {
-    // Skip the very first selection (initial load) so the saved map center
-    // (position de départ) is not overridden by panning to the default scene.
+    // Skip the very first selection (initial load) so that the initial overview
+    // showing the entire map at minZoom is not immediately overridden.
     if (firstRun.current) {
       firstRun.current = false;
       return;
@@ -220,9 +266,10 @@ const GeoSearch: React.FC = () => {
 interface ProjectMapProps {
   mapRef?: React.MutableRefObject<L.Map | null>;
   hideZoomControl?: boolean;
+  isExpanded?: boolean;
 }
 
-const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl }) => {
+const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, isExpanded }) => {
   const project = useProjectStore((state) => state.project);
   const scenes = useProjectStore((state) => state.scenes);
   const setMapConfig = useProjectStore((state) => state.setMapConfig);
@@ -498,7 +545,7 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl }) => {
           >
             {mapRef && <MapRefBridge mapRef={mapRef} />}
             <MapEvents />
-            <FitBounds bounds={bounds} />
+            <FitBounds bounds={bounds} isExpanded={isExpanded} />
             <CenterOnSelected />
             <ImageOverlay
               url={mapConfig.image!}
@@ -669,6 +716,7 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl }) => {
           >
             {mapRef && <MapRefBridge mapRef={mapRef} />}
             <MapEvents />
+            <FitGeoBounds scenes={scenes} isExpanded={isExpanded} />
             <CenterOnSelected />
             {mode === 'editor' && <GeoSearch />}
             <TileLayer

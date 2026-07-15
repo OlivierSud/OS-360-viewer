@@ -14,6 +14,7 @@ export interface ProjectMetadata {
   updatedAt?: string;
   defaultScene?: string;
   splashImage?: string;
+  splashDuration?: number;
 }
 
 export interface Project {

@@ -7,6 +7,7 @@ const Sidebar: React.FC = () => {
   const selectedSceneId = useProjectStore((state) => state.selectedSceneId);
   const updateScene = useProjectStore((state) => state.updateScene);
   const removeScene = useProjectStore((state) => state.removeScene);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
@@ -32,8 +33,46 @@ const Sidebar: React.FC = () => {
   };
 
   return (
-    <aside className="sidebar" style={{ userSelect: 'none' }}>
-      <h2>Viewpoints</h2>
+    <>
+      {/* Mobile FAB to open the viewpoints list */}
+      <button
+        className="sidebar-fab"
+        onClick={() => setMobileOpen(true)}
+        style={{
+          display: 'none',
+          position: 'fixed',
+          left: '12px',
+          bottom: '12px',
+          zIndex: 1500,
+          width: '52px',
+          height: '52px',
+          borderRadius: '50%',
+          border: '1px solid rgba(255,255,255,0.12)',
+          background: 'linear-gradient(180deg, rgba(0,136,255,0.9), rgba(0,85,204,0.9))',
+          color: 'white',
+          cursor: 'pointer',
+          fontSize: '1.4rem',
+          boxShadow: '0 4px 14px rgba(0,0,0,0.5)',
+        }}
+        title="Viewpoints"
+      >
+        ☰
+      </button>
+
+      <aside className={`sidebar${mobileOpen ? ' mobile-open' : ''}`} style={{ userSelect: 'none' }}>
+        <button
+          className="sheet-collapse-btn"
+          onClick={() => setMobileOpen(false)}
+          title="Fermer"
+          aria-label="Fermer"
+        >
+          <svg width="22" height="14" viewBox="0 0 24 14" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="4 3 12 11 20 3" />
+          </svg>
+        </button>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+          <h2 style={{ margin: 0 }}>Viewpoints</h2>
+        </div>
       <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
         {scenes.map((scene) => {
           const isSelected = scene.id === selectedSceneId;
@@ -43,7 +82,7 @@ const Sidebar: React.FC = () => {
           return (
             <li
               key={scene.id}
-              onClick={() => { if (!isConfirmingDelete) selectScene(scene.id); }}
+              onClick={() => { if (!isConfirmingDelete) { selectScene(scene.id); setMobileOpen(false); } }}
               style={{
                 cursor: 'pointer',
                 padding: '8px 10px',
@@ -152,7 +191,8 @@ const Sidebar: React.FC = () => {
           );
         })}
       </ul>
-    </aside>
+      </aside>
+    </>
   );
 };
 

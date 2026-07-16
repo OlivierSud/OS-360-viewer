@@ -28,6 +28,16 @@ const EditorPage: React.FC = () => {
   const [isDragging, setIsDragging] = useState(false);
   const [showHome, setShowHome] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches
+  );
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 768px)');
+    const onChange = () => setIsMobile(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
 
   useEffect(() => {
     setMode('editor');
@@ -67,11 +77,13 @@ const EditorPage: React.FC = () => {
   const getHeights = () => {
     if (layout === 'viewer-max') return { viewer: '100%', map: '0%' };
     if (layout === 'map-max') return { viewer: '0%', map: '100%' };
+    // On mobile we can't drag the splitter, so a fixed 50/50 is used.
+    if (isMobile) return { viewer: '50%', map: '50%' };
     return { viewer: `${viewerHeight}%`, map: `${100 - viewerHeight}%` };
   };
 
   const heights = getHeights();
-  const showSplitControls = layout === 'split';
+  const showSplitControls = layout === 'split' && !isMobile;
 
   return (
     <div className="editor-layout">
@@ -85,7 +97,7 @@ const EditorPage: React.FC = () => {
         >
           
           {/* Top Pane: 360 Viewer */}
-          <div style={{ 
+          <div className="editor-pane editor-pane--viewer" style={{ 
             height: heights.viewer, 
             transition: isDragging ? 'none' : 'height 0.4s ease-in-out',
             overflow: 'hidden', 
@@ -109,6 +121,7 @@ const EditorPage: React.FC = () => {
           {/* Interactive Drag Splitter Bar */}
           {showSplitControls && (
             <div 
+              className="editor-splitter"
               onMouseDown={startDrag}
               style={{
                 height: '8px',
@@ -137,7 +150,7 @@ const EditorPage: React.FC = () => {
           )}
 
           {/* Bottom Pane: Project Map */}
-          <div style={{ 
+          <div className="editor-pane editor-pane--map" style={{ 
             height: heights.map, 
             transition: isDragging ? 'none' : 'height 0.4s ease-in-out',
             overflow: 'hidden', 

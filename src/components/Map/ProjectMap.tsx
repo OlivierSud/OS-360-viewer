@@ -774,7 +774,7 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, isExpa
           </MapContainer>
 
           {mode === 'editor' &&
-          <div style={{ position: 'absolute', top: 90, left: 10, zIndex: 1000, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <div className="map-controls" style={{ position: 'absolute', top: 90, left: 10, zIndex: 1000, display: 'flex', flexDirection: 'column', gap: '6px' }}>
             {!isMoving && !isRotating && !isLinking && !isPlacingProjectLink && (
               <button 
                 onClick={() => setIsPlacing(!isPlacing)}
@@ -990,7 +990,7 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, isExpa
           </MapContainer>
 
           {mode === 'editor' &&
-          <div style={{ position: 'absolute', top: 90, left: 10, zIndex: 1000, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <div className="map-controls" style={{ position: 'absolute', top: 90, left: 10, zIndex: 1000, display: 'flex', flexDirection: 'column', gap: '6px' }}>
             {!isMoving && !isRotating && !isLinking && !isPlacingProjectLink && (
               <button 
                 onClick={() => setIsPlacing(!isPlacing)}

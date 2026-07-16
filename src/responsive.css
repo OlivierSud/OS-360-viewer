@@ -1,0 +1,290 @@
+/* ============================================================
+   Responsive — mobile (portrait & landscape)
+   Only applies below 768px. Desktop layout is untouched.
+   ============================================================ */
+
+/* Phones & small tablets (portrait + landscape) */
+@media (max-width: 768px) {
+  /* ── Editor shell ── */
+  .editor-layout {
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+  }
+  
+  .toolbar {
+    height: auto !important;
+    min-height: 40px ;
+    padding: 8px 10px 10px;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 8px 10px;
+  }
+  
+  .toolbar h1 {
+    font-size: 0.95rem;
+    flex: 0 1 auto;
+    min-width: 0;
+    margin-top: 2px;
+    min-height: 20px;
+  }
+  
+  .toolbar-actions {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    align-items: center;
+    gap: 6px;
+    min-height: 40px;
+  }
+
+  /* The "Projet : <title>" pill should not overflow the bar */
+  .toolbar-actions > div:first-child {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 60%;
+  }
+  .toolbar-actions > div:first-child button {
+    max-width: 100px;
+  }
+
+  /* Keep the cloud dropdown + action buttons compact on phones */
+  .toolbar-actions > button,
+  .toolbar-actions > div:not(:first-child) > button {
+    font-size: 0.78rem;
+    padding: 5px 9px;
+    height: 32px;
+    box-sizing: border-box;
+  }
+
+  /* Cloud project dropdown: smaller trigger + full-width panel on phones */
+  .toolbar-actions > div:not(:first-child) {
+    flex: 0 0 auto;
+  }
+  .toolbar-actions > div:not(:first-child) > button span[style*="max-width"] {
+    max-width: 90px !important;
+  }
+  .toolbar-actions > div:not(:first-child) [style*="width:280px"] {
+    width: min(280px, calc(100vw - 20px)) !important;
+    right: 0;
+    left: auto;
+  }
+
+  .editor-main {
+    flex-direction: column;
+    position: relative;
+  }
+
+  /* Sidebar becomes a bottom sheet / drawer */
+  .sidebar {
+    display: none;
+  }
+
+  .sidebar.mobile-open {
+    display: block;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    top: auto;
+    width: 100%;
+    max-height: 45vh;
+    overflow-y: auto;
+    border-right: none;
+    border-top: 1px solid var(--border-color);
+    border-radius: 14px 14px 0 0;
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.5);
+    z-index: 1600;
+    animation: slideUpSheet 0.25s ease;
+  }
+
+  /* Mobile FABs + collapse buttons (hidden on desktop, shown on mobile) */
+  .sidebar-fab {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Centered "collapse" arrow glued to the TOP edge of each bottom sheet */
+  .sheet-collapse-btn {
+    display: flex !important;
+    align-self: center;
+    margin: 0 auto 6px;
+    width: 56px;
+    height: 26px;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border-color);
+    border-bottom: none;
+    border-radius: 13px 13px 0 0;
+    background: #1e1e1e;
+    color: #cfcfcf;
+    cursor: pointer;
+    padding: 0;
+    box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.45);
+    position: sticky;
+    top: 0;
+    z-index: 5;
+  }
+  .sheet-collapse-btn svg {
+    display: block;
+  }
+
+  @keyframes slideUpSheet {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+  }
+
+  /* Hidden by default on mobile (collé à gauche / visible si on ne cache pas). */
+  .properties-panel {
+    display: none !important;
+  }
+
+  /* Properties panel becomes a bottom sheet / drawer.
+     The mobile-open class lives directly on the <aside>; when absent the
+     rule above keeps it fully hidden, so the desktop `.properties-panel
+     { width:300px }` can never leave it visible when closed. */
+  .properties-panel.mobile-open {
+    display: block !important;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    top: auto;
+    width: 100%;
+    max-height: 55vh;
+    overflow-y: auto;
+    border-left: none;
+    border-top: 1px solid var(--border-color);
+    border-radius: 14px 14px 0 0;
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.5);
+    z-index: 1600;
+    animation: slideUpSheet 0.25s ease;
+  }
+
+  .properties-fab {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Hide the burger while the sheet is open (the in-sheet ✕ closes it) */
+  .properties-fab--hidden {
+    display: none !important;
+  }
+
+  .properties-close {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* ── Editor center: stack viewer + map on mobile (heights handled in JS) ── */
+  .editor-splitter {
+    display: none !important;
+  }
+
+  /* Smaller, less intrusive collapse arrows on mobile */
+  .editor-pane--viewer > button,
+  .editor-pane--map > button {
+    padding: 4px !important;
+    transform: translateX(-50%) scale(0.7) !important;
+  }
+  .editor-pane--viewer > button svg,
+  .editor-pane--map > button svg {
+    width: 26px !important;
+    height: 16px !important;
+  }
+
+  /* ── Map controls (ProjectMap): centered on the vertical axis of the map ── */
+  .map-controls {
+    top: 50% !important;
+    left: 8px !important;
+    transform: translateY(-50%) !important;
+    gap: 5px !important;
+    max-width: calc(100% - 16px);
+  }
+  .map-controls button {
+    width: auto !important;
+    min-height: 40px;
+    padding: 6px 12px 6px 9px !important;
+    font-size: 0.72rem !important;
+  }
+  .map-control-btn,
+  .map-control-button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  /* ── Viewer: map + buttons always take ~half the screen width ── */
+  .viewer-minimap {
+    top: 58px !important;
+    right: 8px !important;
+    width: 50vw !important;
+    height: 50vw !important;
+    overflow: visible !important;
+    pointer-events: none !important;
+    z-index: 2000 !important;
+  }
+  .viewer-minimap__inner {
+    transform-origin: center;
+    transform: translate(-50%, -50%) scale(calc(50vw / 430px)) !important;
+    position: absolute !important;
+    top: 50% !important;
+    left: 50% !important;
+    pointer-events: none !important;
+  }
+  /* Only the map + its rim buttons catch clicks, not the transparent box */
+  .viewer-minimap__inner > div,
+  .viewer-minimap__inner > button {
+    pointer-events: auto !important;
+    touch-action: manipulation;
+    cursor: pointer;
+  }
+  /* Rim buttons: ~2x the previous mobile size (72px in the 320px layout) */
+  .viewer-minimap__inner > button {
+    width: 72px !important;
+    height: 72px !important;
+    font-size: 1.6rem !important;
+  }
+  .viewer-minimap__inner > button svg {
+    width: 32px !important;
+    height: 32px !important;
+  }
+  .viewer-map-fab {
+    display: none !important;
+  }
+
+  /* Floating hotspot tools already pill-style; keep tappable */
+  .hotspot-tools-fab {
+    min-height: 44px;
+  }
+
+  /* Project selection screen */
+  .selection-screen {
+    padding: 16px;
+    gap: 16px;
+  }
+  .selection-screen__card {
+    width: 100%;
+    max-width: 100%;
+    padding: 16px;
+  }
+}
+
+/* Landscape phones: a bit more breathing room, keep sheets shorter */
+@media (max-width: 768px) and (orientation: landscape) {
+  .sidebar.mobile-open {
+    max-height: 70vh;
+  }
+  .properties-panel.mobile-open {
+    max-height: 75vh;
+  }
+}
+
+/* Very small phones */
+@media (max-width: 400px) {
+  .toolbar h1 {
+    font-size: 0.85rem;
+  }
+}

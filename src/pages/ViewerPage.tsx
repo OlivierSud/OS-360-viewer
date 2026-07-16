@@ -37,6 +37,17 @@ const ViewerPage: React.FC = () => {
   const [mapExpanded, setMapExpanded] = useState(false);
   const [status, setStatus] = useState<'loading' | 'password-required' | 'ready' | 'error'>('loading');
 
+  // Scale the mini-map so the whole block (map + rim buttons) always takes ~half the screen width.
+  // Computed in JS because CSS calc() division by a length is unreliable across mobile browsers.
+  const [mapScale, setMapScale] = useState(
+    typeof window !== 'undefined' ? (window.innerWidth * 0.5) / 430 : 0.45
+  );
+  useEffect(() => {
+    const onResize = () => setMapScale((window.innerWidth * 0.5) / 430);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
   useEffect(() => {
     setMode('viewer');
   }, [setMode]);
@@ -163,9 +174,61 @@ const ViewerPage: React.FC = () => {
         </button>
       )}
 
+      {/* Mobile-only FAB: open the map full-screen (mini-map is hidden on phones) */}
+      <button
+        className="viewer-map-fab"
+        onClick={() => { setShowMap(true); setMapExpanded(true); }}
+        title="Ouvrir le plan en plein écran"
+        style={{
+          display: 'none',
+          position: 'absolute',
+          bottom: '15px',
+          right: '15px',
+          zIndex: 1100,
+          ...mapBtnStyle,
+        }}
+      >
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21" />
+          <line x1="9" y1="3" x2="9" y2="18" />
+          <line x1="15" y1="6" x2="15" y2="21" />
+        </svg>
+      </button>
+
+      {/* Close map button (bottom-right), used instead of the in-map ✕ which is blocked on mobile */}
+      {showMap && !mapExpanded && (
+        <button
+          onClick={() => setShowMap(false)}
+          title="Fermer le plan"
+          style={{
+            position: 'fixed',
+            bottom: '20px',
+            right: '20px',
+            zIndex: 3000,
+            width: '48px',
+            height: '48px',
+            borderRadius: '50%',
+            border: '1px solid rgba(255,255,255,0.25)',
+            background: 'rgba(0,0,0,0.65)',
+            color: 'white',
+            cursor: 'pointer',
+            fontSize: '1.2rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backdropFilter: 'blur(6px)',
+            boxShadow: '0 4px 14px rgba(0,0,0,0.5)',
+            touchAction: 'manipulation',
+          }}
+        >
+          ✕
+        </button>
+      )}
+
       {/* Mini map overlay: round plan + controls at constant radius */}
       {showMap && !mapExpanded && (
         <div
+          className="viewer-minimap"
           style={{
             position: 'absolute',
             top: '65px',
@@ -175,32 +238,37 @@ const ViewerPage: React.FC = () => {
             height: '320px',
           }}
         >
-          {/* Circular map container (320px x 320px) */}
+          {/* Scaled wrapper: keeps the 320px layout (peripheral buttons) but renders smaller on mobile */}
           <div
-            style={{
-              width: '100%',
-              height: '100%',
-              borderRadius: '50%',
-              border: '1px solid rgba(255,255,255,0.12)',
-              overflow: 'hidden',
-              boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.3), 0 0 0 3px rgba(0,122,204,0.35), 0 12px 36px rgba(0,0,0,0.45)',
-              background: '#111',
-            }}
+            className="viewer-minimap__inner"
+            style={{ position: 'relative', width: '320px', height: '320px', transform: `translate(-50%, -50%) scale(${mapScale})` }}
           >
-            <ProjectMap mapRef={mapRef} hideZoomControl isExpanded={false} />
-          </div>
+            {/* Circular map container (320px x 320px) */}
+            <div
+              style={{
+                width: '100%',
+                height: '100%',
+                borderRadius: '50%',
+                border: '1px solid rgba(255,255,255,0.12)',
+                overflow: 'hidden',
+                boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.3), 0 0 0 3px rgba(0,122,204,0.35), 0 12px 36px rgba(0,0,0,0.45)',
+                background: '#111',
+              }}
+            >
+              <ProjectMap mapRef={mapRef} hideZoomControl isExpanded={false} />
+            </div>
 
           {/* Floating buttons (44px) at constant radius of 198px from center (160px, 160px) to prevent touching */}
           
-          {/* 1. Zoom + (Left, 150deg) */}
+          {/* 1. Zoom + (7h) */}
           <button
             onClick={() => mapRef.current?.zoomIn()}
             title="Zoom avant"
             style={{
               ...mapBtnStyle,
               position: 'absolute',
-              left: '-34px',
-              top: '39px',
+              left: '29px',
+              top: '289px',
               zIndex: 1100,
             }}
           >
@@ -214,8 +282,8 @@ const ViewerPage: React.FC = () => {
             style={{
               ...mapBtnStyle,
               position: 'absolute',
-              left: '-57px',
-              top: '104px',
+              left: '-55px',
+              top: '189px',
               zIndex: 1100,
             }}
           >
@@ -235,8 +303,8 @@ const ViewerPage: React.FC = () => {
             style={{
               ...mapBtnStyle,
               position: 'absolute',
-              left: '-57px',
-              top: '173px',
+              left: '-55px',
+              top: '59px',
               zIndex: 1100,
             }}
           >
@@ -253,28 +321,29 @@ const ViewerPage: React.FC = () => {
             style={{
               ...mapBtnStyle,
               position: 'absolute',
-              left: '-34px',
-              top: '237px',
+              left: '29px',
+              top: '-41px',
               zIndex: 1100,
             }}
           >
             ⤢
           </button>
 
-          {/* 5. Fermer (✕) (Top-Right, 40deg) */}
+          {/* 5. Fermer (✕) (1h, right side) */}
           <button
             onClick={() => setShowMap(false)}
             title="Fermer le plan"
             style={{
               ...mapBtnStyle,
               position: 'absolute',
-              left: '290px',
-              top: '11px',
+              left: '219px',
+              top: '-41px',
               zIndex: 1100,
             }}
           >
             ✕
           </button>
+          </div>
         </div>
       )}
 

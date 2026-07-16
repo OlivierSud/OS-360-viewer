@@ -52,6 +52,7 @@ const ProjectSelectionScreen: React.FC<ProjectSelectionScreenProps> = ({ onClose
 
   return (
     <div
+      className="selection-screen"
       style={{
         position: 'fixed',
         inset: 0,
@@ -86,6 +87,7 @@ const ProjectSelectionScreen: React.FC<ProjectSelectionScreenProps> = ({ onClose
         }}
       />
       <div
+        className="selection-screen__card"
         style={{
           position: 'relative',
           zIndex: 1,

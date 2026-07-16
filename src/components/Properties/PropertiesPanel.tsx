@@ -47,7 +47,7 @@ const mapActionBtnStyle: React.CSSProperties = {
 /* ══════════════════════════════════════════════════════════
    Project Settings Panel
 ══════════════════════════════════════════════════════════ */
-const ProjectSettingsPanel: React.FC = () => {
+const ProjectSettingsPanel: React.FC<{ mobileOpen?: boolean; onMobileClose?: () => void }> = ({ mobileOpen, onMobileClose }) => {
   const project = useProjectStore((s) => s.project);
   const updateProjectTitle = useProjectStore((s) => s.updateProjectTitle);
   const setProject = useProjectStore((s) => s.setProject);
@@ -171,15 +171,30 @@ const ProjectSettingsPanel: React.FC = () => {
 
   return (
     <aside
-      className="properties-panel"
+      className={`properties-panel${mobileOpen ? ' mobile-open' : ''}`}
       style={{ padding: '15px', color: 'white', display: 'flex', flexDirection: 'column', gap: '16px', overflowY: 'auto' }}
     >
+      {onMobileClose && (
+        <button
+          className="sheet-collapse-btn"
+          onClick={onMobileClose}
+          title="Fermer"
+          aria-label="Fermer"
+        >
+          <svg width="22" height="14" viewBox="0 0 24 14" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="4 3 12 11 20 3" />
+          </svg>
+        </button>
+      )}
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #333', paddingBottom: '10px' }}>
         <h2 style={{ margin: 0, fontSize: '1rem', fontWeight: 700 }}>⚙️ Paramètres du projet</h2>
         <button
-          onClick={() => setShowProjectSettings(false)}
-          style={{ background: 'none', border: 'none', color: '#666', cursor: 'pointer', fontSize: '1rem', padding: '2px 5px' }}
+          onClick={() => {
+            setShowProjectSettings(false);
+            onMobileClose?.();
+          }}
+          style={{ display: 'none', background: 'none', border: 'none', color: '#666', cursor: 'pointer', fontSize: '1rem', padding: '2px 5px' }}
           title="Fermer"
         >✕</button>
       </div>
@@ -821,7 +836,7 @@ const ProjectSettingsPanel: React.FC = () => {
 /* ══════════════════════════════════════════════════════════
    Hotspot Properties Panel (existing content)
 ══════════════════════════════════════════════════════════ */
-const HotspotPropertiesPanel: React.FC = () => {
+const HotspotPropertiesPanel: React.FC<{ mobileOpen?: boolean; onMobileClose?: () => void }> = ({ mobileOpen, onMobileClose }) => {
   const scenes = useProjectStore((state) => state.scenes);
   const selectedSceneId = useProjectStore((state) => state.selectedSceneId);
   const selectedHotspotId = useProjectStore((state) => state.selectedHotspotId);
@@ -852,9 +867,21 @@ const HotspotPropertiesPanel: React.FC = () => {
 
   return (
     <aside
-      className="properties-panel"
+      className={`properties-panel${mobileOpen ? ' mobile-open' : ''}`}
       style={{ padding: '15px', color: 'white', display: 'flex', flexDirection: 'column', gap: '20px', userSelect: 'none', overflowY: 'auto' }}
     >
+      {onMobileClose && (
+        <button
+          className="sheet-collapse-btn"
+          onClick={onMobileClose}
+          title="Fermer"
+          aria-label="Fermer"
+        >
+          <svg width="22" height="14" viewBox="0 0 24 14" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="4 3 12 11 20 3" />
+          </svg>
+        </button>
+      )}
       <h2 style={{ margin: 0, fontSize: '1.2rem', borderBottom: '1px solid #333', paddingBottom: '10px' }}>Properties</h2>
 
       {selectedScene ? (
@@ -1078,7 +1105,54 @@ const HotspotPropertiesPanel: React.FC = () => {
 ══════════════════════════════════════════════════════════ */
 const PropertiesPanel: React.FC = () => {
   const showProjectSettings = useProjectStore((s) => s.showProjectSettings);
-  return showProjectSettings ? <ProjectSettingsPanel /> : <HotspotPropertiesPanel />;
+  const selectedSceneId = useProjectStore((s) => s.selectedSceneId);
+  const selectedHotspotId = useProjectStore((s) => s.selectedHotspotId);
+  const scenes = useProjectStore((s) => s.scenes);
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  const selectedScene = scenes.find((s) => s.id === selectedSceneId) ?? null;
+  const selectedHotspot = selectedScene?.hotspots.find((h) => h.id === selectedHotspotId) ?? null;
+
+  // On mobile, auto-open the sheet when a scene/hotspot gets selected,
+  // or when the project settings are opened from the toolbar.
+  useEffect(() => {
+    if (selectedScene || selectedHotspot || showProjectSettings) setMobileOpen(true);
+  }, [selectedSceneId, selectedHotspotId, showProjectSettings]);
+
+  const hasContent = Boolean(selectedScene);
+
+  return (
+    <>
+      <button
+        className={`properties-fab${mobileOpen ? ' properties-fab--hidden' : ''}`}
+        onClick={() => setMobileOpen((o) => !o)}
+        style={{
+          display: 'none',
+          position: 'fixed',
+          right: '12px',
+          bottom: '12px',
+          zIndex: 1500,
+          width: '52px',
+          height: '52px',
+          borderRadius: '50%',
+          border: '1px solid rgba(255,255,255,0.12)',
+          background: 'linear-gradient(180deg, rgba(0,136,255,0.9), rgba(0,85,204,0.9))',
+          color: 'white',
+          cursor: 'pointer',
+          fontSize: '1.5rem',
+          boxShadow: '0 4px 14px rgba(0,0,0,0.5)',
+        }}
+        title="Ouvrir les propriétés"
+        aria-label="Ouvrir les propriétés"
+      >
+        ☰
+      </button>
+
+      <div className={`properties-drawer-host${hasContent ? ' has-content' : ''}`}>
+        {showProjectSettings ? <ProjectSettingsPanel mobileOpen={mobileOpen} onMobileClose={() => setMobileOpen(false)} /> : <HotspotPropertiesPanel mobileOpen={mobileOpen} onMobileClose={() => setMobileOpen(false)} />}
+      </div>
+    </>
+  );
 };
 
 export default PropertiesPanel;

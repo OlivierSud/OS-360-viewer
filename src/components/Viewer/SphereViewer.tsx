@@ -120,6 +120,7 @@ const SphereViewer: React.FC = () => {
   const [panoramaError, setPanoramaError] = useState<string | null>(null);
   const [targetProjectTitle, setTargetProjectTitle] = useState<string | null>(null);
   const [fullscreenImageUrl, setFullscreenImageUrl] = useState<string | null>(null);
+  const [fullscreenVideoUrl, setFullscreenVideoUrl] = useState<string | null>(null);
 
   // Resolve the name of the target project for project-link scenes
   useEffect(() => {
@@ -292,6 +293,10 @@ const SphereViewer: React.FC = () => {
       setFullscreenImageUrl(url);
     };
 
+    (window as any).openPSVFullscreenVideo = (url: string) => {
+      setFullscreenVideoUrl(url);
+    };
+
     // --- Navigation links ---
     if (selectedScene?.links) {
       selectedScene.links.forEach((link) => {
@@ -349,15 +354,37 @@ const SphereViewer: React.FC = () => {
           } else {
             // Local/Direct Video
             contentHtml = `
-              <div style="margin-top:2px; border-radius:6px; overflow:hidden; background:#000;">
+              <div style="position:relative; margin-top:2px; border-radius:6px; overflow:hidden; background:#000;">
                 <video
                   src="${hotspot.content}"
                   controls
+                  controlsList="nofullscreen"
+                  disablePictureInPicture
                   autoplay
                   style="width:100%; display:block;"
                 >
                   Your browser does not support the video tag.
                 </video>
+                <button
+                  onclick="window.openPSVFullscreenVideo('${hotspot.content.replace(/'/g, "\\'")}')"
+                  onpointerdown="event.stopPropagation()"
+                  onpointerup="event.stopPropagation();window.openPSVFullscreenVideo('${hotspot.content.replace(/'/g, "\\'")}')"
+                  style="
+                    position:absolute;top:6px;right:6px;
+                    background:rgba(0,0,0,0.6);border:1px solid rgba(255,255,255,0.25);
+                    color:white;border-radius:6px;cursor:pointer;
+                    width:28px;height:28px;display:flex;align-items:center;justify-content:center;
+                    backdrop-filter:blur(4px);transition:background 0.15s;
+                  "
+                  title="Plein écran"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="15 3 21 3 21 9"></polyline>
+                    <polyline points="9 21 3 21 3 15"></polyline>
+                    <line x1="21" y1="3" x2="14" y2="10"></line>
+                    <line x1="3" y1="21" x2="10" y2="14"></line>
+                  </svg>
+                </button>
               </div>
             `;
           }
@@ -374,6 +401,8 @@ const SphereViewer: React.FC = () => {
                 <p style="display:none;margin:0;font-size:0.82rem;color:#888;font-style:italic;">Image non disponible.</p>
                 <button
                   onclick="window.openPSVFullscreen('${hotspot.content.replace(/'/g, "\\'")}')"
+                  onpointerdown="event.stopPropagation()"
+                  onpointerup="event.stopPropagation();window.openPSVFullscreen('${hotspot.content.replace(/'/g, "\\'")}')"
                   style="
                     position:absolute;top:6px;right:6px;
                     background:rgba(0,0,0,0.6);border:1px solid rgba(255,255,255,0.25);
@@ -406,10 +435,12 @@ const SphereViewer: React.FC = () => {
         const popupHtml = isOpen ? `
           <div class="psv-hotspot-popup" onclick="event.stopPropagation();" style="
             position:absolute;
-            bottom: calc(100% + 14px);
+            top:50%;
             left:50%;
-            transform: translateX(-50%);
-            width:300px;
+            transform: translate(-50%, -50%);
+            width:min(300px, 80vw);
+            max-height:60vh;
+            overflow:auto;
             background:rgba(14,14,16,0.92);
             backdrop-filter:blur(12px);
             -webkit-backdrop-filter:blur(12px);
@@ -429,7 +460,9 @@ const SphereViewer: React.FC = () => {
                   : (hotspot.type === 'video' ? '🎥 Vidéo' : hotspot.type === 'image' ? '🖼️ Image' : 'ℹ️ Info')}
               </span>
               <button
-                onclick="event.stopPropagation();window.closePSVHotspot()"
+                 onclick="event.stopPropagation();window.closePSVHotspot()"
+                 onpointerdown="event.stopPropagation()"
+                 onpointerup="event.stopPropagation();window.closePSVHotspot()"
                 style="background:none;border:none;color:#666;font-size:1rem;cursor:pointer;padding:2px 5px;border-radius:3px;line-height:1;flex-shrink:0;"
               >✕</button>
             </div>
@@ -563,11 +596,16 @@ const SphereViewer: React.FC = () => {
 
   // Close fullscreen on Escape key
   useEffect(() => {
-    if (!fullscreenImageUrl) return;
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setFullscreenImageUrl(null); };
+    if (!fullscreenImageUrl && !fullscreenVideoUrl) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setFullscreenImageUrl(null);
+        setFullscreenVideoUrl(null);
+      }
+    };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [fullscreenImageUrl]);
+  }, [fullscreenImageUrl, fullscreenVideoUrl]);
 
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
@@ -628,6 +666,67 @@ const SphereViewer: React.FC = () => {
           </button>
         </div>
       )}
+
+      {/* Fullscreen video overlay (in-app, controls stay accessible) */}
+      {fullscreenVideoUrl && (
+        <div
+          onClick={() => setFullscreenVideoUrl(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9999,
+            background: 'rgba(0,0,0,0.95)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backdropFilter: 'blur(6px)',
+            WebkitBackdropFilter: 'blur(6px)',
+            animation: 'fadeIn 0.18s ease',
+          }}
+        >
+          <video
+            src={fullscreenVideoUrl}
+            controls
+            autoPlay
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxWidth: '92vw',
+              maxHeight: '82vh',
+              width: '100%',
+              objectFit: 'contain',
+              borderRadius: '10px',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.8)',
+              background: '#000',
+            }}
+          />
+          <button
+            onClick={() => setFullscreenVideoUrl(null)}
+            style={{
+              position: 'fixed',
+              top: '20px',
+              right: '20px',
+              background: 'rgba(255,255,255,0.15)',
+              border: '1px solid rgba(255,255,255,0.25)',
+              backdropFilter: 'blur(8px)',
+              color: 'white',
+              borderRadius: '50%',
+              width: '40px',
+              height: '40px',
+              fontSize: '1.1rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'background 0.15s',
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.3)')}
+            onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.15)')}
+            title="Fermer (Echap)"
+          >
+            ✕
+          </button>
+        </div>
+      )}
       <div
         ref={containerRef}
         style={{
@@ -637,6 +736,7 @@ const SphereViewer: React.FC = () => {
           cursor: isAddingHotspot || isMovingHotspot ? addHotspotCursor : undefined,
         }}
       />
+
 
       {selectedScene?.type === 'project-link' && (
         <div

@@ -3,7 +3,7 @@ import { useProjectStore } from '../../state/projectStore';
 import { deleteCloudProject, listCloudProjects } from '../../services/cloudflareApi';
 import { getViewerUrlForCurrentProject } from '../../services/projectCloudSave';
 import { createTrackedObjectUrl } from '../../services/mediaRegistry';
-import { createProjectId } from '../../storage/projectRegistry';
+import { createProjectId, deleteProject } from '../../storage/projectRegistry';
 import type { Project } from '../../models/Project';
 import { sha256 } from '../../utils/crypto';
 import { DEFAULT_ACCENT_COLOR } from '../../utils/theme';
@@ -217,7 +217,10 @@ const ProjectSettingsPanel: React.FC<{ mobileOpen?: boolean; onMobileClose?: () 
 
     setIsDeleting(true);
     try {
+      // Remove the project's media (R2 assets + DB entry) from Cloudflare, and
+      // the local registry entry so no trace remains.
       await deleteCloudProject(currentProjectId);
+      deleteProject(currentProjectId);
       window.dispatchEvent(new Event('cloud-projects-changed'));
       resetToBlankProject();
     } finally {

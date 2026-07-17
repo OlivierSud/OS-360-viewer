@@ -216,45 +216,37 @@
     min-height: 44px;
   }
 
-  /* ── Viewer: map + buttons always take ~half the screen width ── */
+  /* ── Viewer: small round map pinned to the top-right corner ── */
   .viewer-minimap {
-    top: 58px !important;
-    right: 8px !important;
-    width: 50vw !important;
-    height: 50vw !important;
+    top: 10px !important;
+    right: 32px !important;
+    width: 44vw !important;
+    height: 44vw !important;
+    max-width: 320px !important;
+    max-height: 320px !important;
     overflow: visible !important;
     pointer-events: none !important;
     z-index: 2000 !important;
   }
-  .viewer-minimap__inner {
-    transform-origin: center;
-    transform: translate(-50%, -50%) scale(calc(50vw / 430px)) !important;
-    position: absolute !important;
-    top: 50% !important;
-    left: 50% !important;
-    pointer-events: none !important;
-  }
-  /* Only the map + its rim buttons catch clicks, not the transparent box */
-  .viewer-minimap__inner > div,
-  .viewer-minimap__inner > button {
+  /* Only the map + its control clusters catch clicks, not the transparent box */
+  .viewer-minimap > div,
+  .viewer-minimap button {
     pointer-events: auto !important;
     touch-action: manipulation;
     cursor: pointer;
   }
-  /* Rim buttons: ~2x the previous mobile size (72px in the 320px layout) */
-  .viewer-minimap__inner > button {
-    width: 72px !important;
-    height: 72px !important;
-    font-size: 1.6rem !important;
+  /* Enlarge the compact control buttons for touch on mobile (stay just outside the rim) */
+  .viewer-minimap button {
+    width: 13vw !important;
+    height: 13vw !important;
+    max-width: 48px !important;
+    max-height: 48px !important;
+    font-size: 1.3rem !important;
   }
-  .viewer-minimap__inner > button svg {
-    width: 32px !important;
-    height: 32px !important;
+  .viewer-minimap button svg {
+    width: 24px !important;
+    height: 24px !important;
   }
-  .viewer-map-fab {
-    display: none !important;
-  }
-
   /* Floating hotspot tools already pill-style; keep tappable */
   .hotspot-tools-fab {
     min-height: 44px;

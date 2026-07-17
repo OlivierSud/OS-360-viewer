@@ -2,7 +2,7 @@ import type { Project } from '../models/Project';
 import { getTrackedFile } from './mediaRegistry';
 import { uploadCloudAsset } from './cloudflareApi';
 
-type AssetKind = 'splash' | 'map' | 'panoramas' | 'thumbs' | 'hotspots';
+type AssetKind = 'splash' | 'map' | 'panoramas' | 'thumbs' | 'hotspots' | 'audio';
 
 function extensionFor(file: File): string {
   const fromName = file.name.split('.').pop();
@@ -48,6 +48,13 @@ export async function uploadProjectAssetsToR2(project: Project, projectId: strin
     );
   }
 
+  uploadedProject.project.audio = await uploadIfNeeded(
+    uploadedProject.project.audio,
+    projectId,
+    'audio',
+    'project-audio'
+  );
+
   uploadedProject.scenes = await Promise.all(
     uploadedProject.scenes.map(async (scene) => {
       const image = await uploadIfNeeded(scene.image, projectId, 'panoramas', scene.id);
@@ -72,10 +79,31 @@ export async function uploadProjectAssetsToR2(project: Project, projectId: strin
         })
       );
 
+      const audio = await uploadIfNeeded(
+        scene.audio,
+        projectId,
+        'audio',
+        `${scene.id}-audio`
+      );
+
+      const video = await uploadIfNeeded(
+        scene.video,
+        projectId,
+        'panoramas',
+        `${scene.id}-video`
+      );
+      console.log('[upload] video for', scene.id, {
+        hadVideo: Boolean(scene.video),
+        tracked: Boolean(getTrackedFile(scene.video)),
+        result: video,
+      });
+
       return {
         ...scene,
         image: image ?? scene.image,
         thumbnail: thumbnail ?? scene.thumbnail,
+        video: video ?? scene.video,
+        audio: audio ?? scene.audio,
         hotspots,
       };
     })

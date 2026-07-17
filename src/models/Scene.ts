@@ -18,4 +18,6 @@ export interface Scene {
   showTitleInViewer?: boolean;
   type?: 'scene' | 'project-link';
   targetProjectId?: string;
+  audio?: string; // URL of an audio track played when this viewpoint loads
+  video?: string; // URL of a 360° video used as the panorama instead of an image
 }

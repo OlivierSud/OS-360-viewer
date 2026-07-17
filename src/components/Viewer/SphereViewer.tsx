@@ -3,8 +3,12 @@ import { Viewer } from '@photo-sphere-viewer/core';
 import '@photo-sphere-viewer/core/index.css';
 import { MarkersPlugin } from '@photo-sphere-viewer/markers-plugin';
 import '@photo-sphere-viewer/markers-plugin/index.css';
+import { VideoPlugin } from '@photo-sphere-viewer/video-plugin';
+import '@photo-sphere-viewer/video-plugin/index.css';
+import { EquirectangularVideoAdapter } from '@photo-sphere-viewer/equirectangular-video-adapter';
 import { useProjectStore } from '../../state/projectStore';
 import { listCloudProjects } from '../../services/cloudflareApi';
+import { getAccentColor, darkenHex } from '../../utils/theme';
 import type { Hotspot } from '../../models/Hotspot';
 
 function getYoutubeEmbedUrl(url: string): string | null {
@@ -19,6 +23,8 @@ function getYoutubeEmbedUrl(url: string): string | null {
 const SphereViewer: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<Viewer | null>(null);
+  const currentIsVideoRef = useRef(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const addHotspotCursor = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Ctext x='16' y='22' text-anchor='middle' font-size='22'%3E%E2%AD%95%3C/text%3E%3C/svg%3E") 16 16, crosshair`;
 
   // Same pill button style as the map editor controls (Add 360 / Move)
@@ -105,6 +111,7 @@ const SphereViewer: React.FC = () => {
   const selectedSceneId = useProjectStore((state) => state.selectedSceneId);
   const selectedHotspotId = useProjectStore((state) => state.selectedHotspotId);
   const scenes = useProjectStore((state) => state.scenes);
+  const project = useProjectStore((state) => state.project);
   const isAddingHotspot = useProjectStore((state) => state.isAddingHotspot);
   const setIsAddingHotspot = useProjectStore((state) => state.setIsAddingHotspot);
   const mode = useProjectStore((state) => state.mode);
@@ -113,7 +120,46 @@ const SphereViewer: React.FC = () => {
   const isDeletingHotspot = useProjectStore((state) => state.isDeletingHotspot);
   const setIsDeletingHotspot = useProjectStore((state) => state.setIsDeletingHotspot);
 
+  // The configurable accent color only applies in the public viewer. In the
+  // editor the controls (Add Hotspot, navigation links) keep the default blue.
+  const accentColor = mode === 'viewer' ? getAccentColor(project) : '#007acc';
+  const accentColorDark = darkenHex(accentColor);
+
   const selectedScene = scenes.find(s => s.id === selectedSceneId);
+
+  // Whether an audio track is available for the current viewpoint (its own or
+  // the project's ambient one).
+  const hasAudio = Boolean(selectedScene?.audio || project?.project?.audio);
+
+  const [audioVolume, setAudioVolume] = useState(1);
+  const [audioMuted, setAudioMuted] = useState(false);
+
+  // Play the viewpoint's own audio track if present, otherwise the project's
+  // ambient audio. The viewpoint track takes priority and cuts the project one.
+  const playSceneAudio = () => {
+    const el = audioRef.current;
+    if (!el) return;
+    const track = selectedScene?.audio || project?.project?.audio;
+    if (!track) {
+      el.pause();
+      el.removeAttribute('src');
+      el.load();
+      return;
+    }
+    if (el.src !== track) {
+      el.src = track;
+    }
+    el.loop = true;
+    el.play().catch(() => { /* autoplay may be blocked until user interaction */ });
+  };
+
+  // Keep the audio element's volume / mute in sync with the controls.
+  useEffect(() => {
+    const el = audioRef.current;
+    if (!el) return;
+    el.volume = audioMuted ? 0 : audioVolume;
+    el.muted = audioMuted;
+  }, [audioVolume, audioMuted]);
 
   // Which hotspot popup is currently open (rendered as an in-sphere marker)
   const [openHotspotId, setOpenHotspotId] = useState<string | null>(null);
@@ -121,6 +167,11 @@ const SphereViewer: React.FC = () => {
   const [targetProjectTitle, setTargetProjectTitle] = useState<string | null>(null);
   const [fullscreenImageUrl, setFullscreenImageUrl] = useState<string | null>(null);
   const [fullscreenVideoUrl, setFullscreenVideoUrl] = useState<string | null>(null);
+
+  // Scene transition state: freeze current view + zoom-in, load next panorama
+  // in the background, then reveal it directly once ready.
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const transitionInProgress = useRef(false);
 
   // Resolve the name of the target project for project-link scenes
   useEffect(() => {
@@ -145,101 +196,250 @@ const SphereViewer: React.FC = () => {
     }
   };
 
-  // Initialize the viewer when the first panorama is loaded, or update it when the panorama changes.
-  useEffect(() => {
-    if (!containerRef.current) return;
-    if (!selectedScene?.image) return; // Wait until the project has a valid scene image
+  // Build the panorama config: a 360° video when available, otherwise the image.
+  const getPanorama = (scene: typeof selectedScene) => {
+    if (scene?.video) return { source: scene.video };
+    return scene?.image;
+  };
 
-    if (!viewerRef.current) {
+  // (Re)create the PSV viewer instance with the current scene.
+  const createViewer = () => {
+    if (!containerRef.current) return;
+
+      const plugins: any[] = [[MarkersPlugin, {}]];
+      // The PSV adapter is fixed for the lifetime of the viewer, so the video
+      // adapter (and the VideoPlugin that requires it) can only be used when
+      // the current scene is a 360° video. Switching between image and video
+      // scenes re-creates the viewer (see the scene effect below).
+      const isCurrentVideo = Boolean(selectedScene?.video);
+      if (isCurrentVideo) {
+        plugins.push([VideoPlugin, {}]);
+      }
+
       viewerRef.current = new Viewer({
         container: containerRef.current,
-        panorama: selectedScene.image,
-        plugins: [[MarkersPlugin, {}]]
+        panorama: getPanorama(selectedScene),
+        plugins,
+        ...(isCurrentVideo
+          ? { adapter: [EquirectangularVideoAdapter, { muted: false, autoplay: true }] }
+          : {}),
       });
 
-      const markersPlugin = viewerRef.current.getPlugin(MarkersPlugin) as any;
+      if (isCurrentVideo && selectedScene?.video) {
+        const vurl = selectedScene.video;
+        console.log('[SphereViewer] video url', vurl);
 
-      viewerRef.current.addEventListener('position-updated', (e: any) => {
-        const yaw = e.position?.yaw ?? e.args?.[0]?.yaw;
-        if (yaw !== undefined) {
-          useProjectStore.getState().setCurrentYaw(yaw);
-        }
+        // The VideoPlugin starts playback on the PanoramaLoadedEvent. When the
+        // viewer is created directly with a video panorama, that event can be
+        // emitted before the plugin subscribes, leaving the video paused/blank.
+        // Reload the panorama on the next tick so the plugin catches the event
+        // and starts playback. Fallback: force play() shortly after.
+        const vViewer = viewerRef.current;
+        window.setTimeout(() => {
+          if (!viewerRef.current) return;
+          viewerRef.current
+            .setPanorama({ source: vurl }, { transition: false, adapter: EquirectangularVideoAdapter } as any)
+            .catch(() => {});
+        }, 0);
+
+        const tryPlay = () => {
+          const vp: any = vViewer.getPlugin(VideoPlugin);
+          console.log('[SphereViewer] tryPlay', {
+            hasPlugin: Boolean(vp),
+            hasVideo: Boolean(vp?.video),
+            paused: vp?.video?.paused,
+          });
+          if (vp?.video?.paused) vp.video.play().catch((e: any) => console.log('[SphereViewer] play error', e));
+          else if (vp && typeof vp.play === 'function') vp.play();
+        };
+        vViewer.addEventListener('panorama-loaded', () => {
+          console.log('[SphereViewer] panorama-loaded (video)');
+          tryPlay();
+        });
+        window.setTimeout(tryPlay, 800);
+        window.setTimeout(tryPlay, 2000);
+      }
+
+      console.log('[SphereViewer] createViewer', {
+        isCurrentVideo,
+        panorama: getPanorama(selectedScene),
+        hasVideoPlugin: isCurrentVideo,
       });
 
-      // Click on empty sphere: used for "Add Hotspot" mode (marker clicks are
-      // handled separately via the MarkersPlugin 'select-marker' event).
-      viewerRef.current.addEventListener('click', (e: any) => {
-        const state = useProjectStore.getState();
-        const moving = state.isMovingHotspot;
-        const deleting = state.isDeletingHotspot;
-        if (moving || deleting) {
-          const hotspotId = e.marker?.data?.hotspotId;
-          if (hotspotId) {
-            if (deleting) {
-              if (state.selectedSceneId) state.removeHotspot(state.selectedSceneId, hotspotId);
-            } else {
-              state.selectHotspot(hotspotId);
-            }
-            e.preventDefault();
-            return;
+    const markersPlugin = viewerRef.current.getPlugin(MarkersPlugin) as any;
+
+    viewerRef.current.addEventListener('position-updated', (e: any) => {
+      const yaw = e.position?.yaw ?? e.args?.[0]?.yaw;
+      if (yaw !== undefined) {
+        useProjectStore.getState().setCurrentYaw(yaw);
+      }
+    });
+
+    // Click on empty sphere: used for "Add Hotspot" mode (marker clicks are
+    // handled separately via the MarkersPlugin 'select-marker' event).
+    viewerRef.current.addEventListener('click', (e: any) => {
+      const state = useProjectStore.getState();
+      const moving = state.isMovingHotspot;
+      const deleting = state.isDeletingHotspot;
+      if (moving || deleting) {
+        const hotspotId = e.marker?.data?.hotspotId;
+        if (hotspotId) {
+          if (deleting) {
+            if (state.selectedSceneId) state.removeHotspot(state.selectedSceneId, hotspotId);
+          } else {
+            state.selectHotspot(hotspotId);
           }
-        }
-
-        // Click on empty sphere while in "Add Hotspot" mode -> create a hotspot
-        if (state.isAddingHotspot && state.selectedSceneId && !e.marker) {
-          const newHotspot: Hotspot = {
-            id: 'hotspot-' + Date.now(),
-            type: 'text',
-            yaw: e.data.yaw,
-            pitch: e.data.pitch,
-            content: 'Nouveau Hotspot'
-          };
-          state.addHotspot(state.selectedSceneId, newHotspot);
-          state.setIsAddingHotspot(false);
-          state.selectHotspot(newHotspot.id);
-          setOpenHotspotId(newHotspot.id);
           e.preventDefault();
           return;
         }
-      });
+      }
 
-      markersPlugin.addEventListener('unselect-marker', (e: any) => {
-        if (useProjectStore.getState().isMovingHotspot) {
-          e.preventDefault();
-        }
-      });
+      // Click on empty sphere while in "Add Hotspot" mode -> create a hotspot
+      if (state.isAddingHotspot && state.selectedSceneId && !e.marker) {
+        const newHotspot: Hotspot = {
+          id: 'hotspot-' + Date.now(),
+          type: 'text',
+          yaw: e.data.yaw,
+          pitch: e.data.pitch,
+          content: 'Nouveau Hotspot'
+        };
+        state.addHotspot(state.selectedSceneId, newHotspot);
+        state.setIsAddingHotspot(false);
+        state.selectHotspot(newHotspot.id);
+        setOpenHotspotId(newHotspot.id);
+        e.preventDefault();
+        return;
+      }
+    });
 
-      // Marker click (links + hotspots) — robust, doesn't depend on window globals
-      markersPlugin.addEventListener('select-marker', (e: any) => {
-        const data = e.marker?.data ?? {};
-        if (data.target) {
-          useProjectStore.getState().selectScene(data.target);
-        } else if (data.hotspotId) {
-          const state = useProjectStore.getState();
-          if (state.isDeletingHotspot) {
-            if (state.selectedSceneId) state.removeHotspot(state.selectedSceneId, data.hotspotId);
-            return;
-          }
-          state.selectHotspot(data.hotspotId);
-          setOpenHotspotId(data.hotspotId);
+    markersPlugin.addEventListener('unselect-marker', (e: any) => {
+      if (useProjectStore.getState().isMovingHotspot) {
+        e.preventDefault();
+      }
+    });
+
+    // Marker click (links + hotspots) — robust, doesn't depend on window globals
+    markersPlugin.addEventListener('select-marker', (e: any) => {
+      const data = e.marker?.data ?? {};
+      if (data.target) {
+        useProjectStore.getState().selectScene(data.target);
+      } else if (data.hotspotId) {
+        const state = useProjectStore.getState();
+        if (state.isDeletingHotspot) {
+          if (state.selectedSceneId) state.removeHotspot(state.selectedSceneId, data.hotspotId);
+          return;
         }
-      });
-    } else {
-      // If the viewer is already initialized, update the panorama
-      setOpenHotspotId(null);
-      setPanoramaError(null);
-      viewerRef.current.setPanorama(selectedScene.image).catch(err => {
-        console.error('Failed to set panorama for URL:', selectedScene.image, err);
-        setPanoramaError(selectedScene.image);
-      });
+        state.selectHotspot(data.hotspotId);
+        setOpenHotspotId(data.hotspotId);
+      }
+    });
+
+    // Start audio for the initial viewpoint once the viewer is ready.
+    playSceneAudio();
+    currentIsVideoRef.current = Boolean(selectedScene?.video);
+  };
+
+  // Initialize the viewer when the first panorama is loaded, or update it when the panorama changes.
+  useEffect(() => {
+    if (!containerRef.current) return;
+    if (!selectedScene?.image && !selectedScene?.video) return; // Wait until the project has a valid scene
+
+    const isVideo = Boolean(selectedScene?.video);
+    console.log('[SphereViewer] scene effect', {
+      sceneId: selectedScene?.id,
+      isVideo,
+      currentIsVideo: currentIsVideoRef.current,
+      hasViewer: Boolean(viewerRef.current),
+      video: selectedScene?.video,
+      image: selectedScene?.image,
+    });
+
+    if (!viewerRef.current) {
+      createViewer();
+      return;
     }
-  }, [selectedScene?.image]);
+
+    // The PSV adapter is fixed at viewer creation, so switching between an
+    // image and a video scene requires re-creating the viewer.
+    if (currentIsVideoRef.current !== isVideo) {
+      console.log('[SphereViewer] recreating viewer (type changed)');
+      try {
+        viewerRef.current.destroy();
+      } catch {
+        // VideoPlugin's navbar buttons can throw on destroy in some versions.
+      }
+      viewerRef.current = null;
+      // Always clear the container so a previous canvas (image or video) never
+      // remains displayed behind the newly created viewer.
+      if (containerRef.current) {
+        while (containerRef.current.firstChild) {
+          containerRef.current.removeChild(containerRef.current.firstChild);
+        }
+      }
+      createViewer();
+      currentIsVideoRef.current = isVideo;
+      return;
+    }
+
+    // Same type: smoothly swap the panorama in place.
+    if (transitionInProgress.current) return;
+    setOpenHotspotId(null);
+    setPanoramaError(null);
+
+    const viewer = viewerRef.current;
+    if (!viewer) return;
+    transitionInProgress.current = true;
+    setIsTransitioning(true);
+
+    // Pause any playing audio during the transition.
+    audioRef.current?.pause();
+
+    // 1. Freeze the current view and zoom-in slightly, as if we were moving
+    // forward into the next viewpoint.
+    const baseZoom = viewer.getZoomLevel();
+    viewer.zoom(Math.min(100, baseZoom + 35));
+
+    // 2. Load the next panorama in the background, fully preloaded and hidden
+    // (no fade, no loader). The view stays frozen on the current frame.
+    const reveal = () => {
+      transitionInProgress.current = false;
+      setIsTransitioning(false);
+      // 3. The new panorama is ready: reveal it directly, keeping the
+      // zoomed-in level so the next view stays advanced (no zoom-out),
+      // then (re)start the appropriate audio track for this viewpoint.
+      playSceneAudio();
+    };
+
+    // Give the zoom-in animation a brief moment before swapping the panorama.
+    window.setTimeout(() => {
+      viewer
+        .setPanorama(getPanorama(selectedScene), {
+          transition: false,
+          showLoader: false,
+          zoom: Math.min(100, viewer.getZoomLevel()),
+          adapter: isVideo ? EquirectangularVideoAdapter : undefined,
+        } as any)
+        .then(() => {
+          reveal();
+        })
+        .catch((err) => {
+          console.error('Failed to set panorama for URL:', selectedScene?.image ?? selectedScene?.video, err);
+          setPanoramaError(selectedScene?.image ?? selectedScene?.video ?? null);
+          reveal();
+        });
+    }, 320);
+  }, [selectedScene?.image, selectedScene?.video]);
 
   // Clean up the viewer only on component unmount
   useEffect(() => {
     return () => {
       if (viewerRef.current) {
-        viewerRef.current.destroy();
+        try {
+          viewerRef.current.destroy();
+        } catch {
+          // VideoPlugin's navbar buttons can throw on destroy in some versions;
+          // ignore so React unmount does not crash.
+        }
         viewerRef.current = null;
       }
     };
@@ -315,7 +515,7 @@ const SphereViewer: React.FC = () => {
                 </div>
               ` : ''}
               <div style="width:34px;height:34px;background:rgba(255,255,255,0.95);border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 8px rgba(0,0,0,0.5);margin:0 auto;transition:transform 0.2s;">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#007acc" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="${accentColor}" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
                   <polyline points="18 15 12 9 6 15"></polyline>
                 </svg>
               </div>
@@ -331,7 +531,7 @@ const SphereViewer: React.FC = () => {
       selectedScene.hotspots.forEach((hotspot) => {
         const isOpen = hotspot.id === openHotspotId;
         const isSelectedMove = isMovingHotspot && hotspot.id === selectedHotspotId;
-        const accentColor = hotspot.type === 'video' ? '#e50914' : hotspot.type === 'image' ? '#6a0dad' : '#007acc';
+        const accentColorVal = hotspot.type === 'video' ? '#e50914' : hotspot.type === 'image' ? '#6a0dad' : '#007acc';
         const embedUrl = hotspot.type === 'video' ? getYoutubeEmbedUrl(hotspot.content) : null;
 
         // Icon marker (always visible). The popup is embedded as a CSS-positioned
@@ -734,8 +934,108 @@ const SphereViewer: React.FC = () => {
           height: '100%',
           backgroundColor: '#000',
           cursor: isAddingHotspot || isMovingHotspot ? addHotspotCursor : undefined,
+          transition: 'transform 0.32s ease-out, filter 0.32s ease-out',
+          transform: isTransitioning ? 'scale(1.16)' : 'scale(1)',//scale des trasitions
+          filter: isTransitioning ? 'brightness(0.7)' : 'brightness(1)',
         }}
       />
+
+      {/* Hidden audio element: plays the viewpoint/project ambient track */}
+      <audio ref={audioRef} style={{ display: 'none' }} />
+
+      {/* Audio controls: only shown when a track is available (viewpoint or project).
+          Aligned vertically with the project title and horizontally centered on the map circle. */}
+      {hasAudio && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '15px',
+            right: 'calc(32px + min(22vw, 264px) - 150px)',
+            transform: 'translateX(-50%)',
+            zIndex: 1200,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            background: 'rgba(14,14,16,0.78)',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+            border: '1px solid rgba(255,255,255,0.12)',
+            borderRadius: '999px',
+            padding: '6px 12px',
+            boxShadow: '0 4px 14px rgba(0,0,0,0.5)',
+            color: 'white',
+            fontFamily: 'system-ui, sans-serif',
+          }}
+        >
+          <button
+            onClick={() => setAudioMuted((m) => !m)}
+            title={audioMuted ? 'Activer le son' : 'Couper le son'}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'white',
+              cursor: 'pointer',
+              padding: '0 2px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            {audioMuted ? (
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                <line x1="23" y1="9" x2="17" y2="15" />
+                <line x1="17" y1="9" x2="23" y2="15" />
+              </svg>
+            ) : (
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
+              </svg>
+            )}
+          </button>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.01}
+            value={audioMuted ? 0 : audioVolume}
+            onChange={(e) => {
+              const v = Number(e.target.value);
+              setAudioVolume(v);
+              if (v > 0 && audioMuted) setAudioMuted(false);
+            }}
+            title="Niveau audio"
+            style={{ width: '110px', accentColor: accentColor, cursor: 'pointer' }}
+          />
+        </div>
+      )}
+
+      {/* Scene transition loader (next viewpoint loading in the background) */}
+      {isTransitioning && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 1300,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            pointerEvents: 'none',
+          }}
+        >
+          <div
+            style={{
+              width: '34px',
+              height: '34px',
+              borderRadius: '50%',
+              border: '3px solid rgba(255,255,255,0.25)',
+              borderTopColor: 'rgba(255,255,255,0.9)',
+              animation: 'spin 0.8s linear infinite',
+            }}
+          />
+        </div>
+      )}
 
 
       {selectedScene?.type === 'project-link' && (
@@ -800,7 +1100,7 @@ const SphereViewer: React.FC = () => {
               setIsMovingHotspot(false);
             }}
             title="Ajouter un hotspot"
-            style={mapControlButtonStyle(isAddingHotspot, '#d32f2f', '#007acc')}
+            style={mapControlButtonStyle(isAddingHotspot, '#d32f2f', accentColor)}
           >
             <IconPlus /> Add Hotspot
           </button>

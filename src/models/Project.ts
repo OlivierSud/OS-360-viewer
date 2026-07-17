@@ -17,6 +17,11 @@ export interface ProjectMetadata {
   splashDuration?: number;
   /** SHA-256 hash du mot de passe. Absent ou vide = projet sans protection. */
   passwordHash?: string;
+  /** Couleur d'accent du viewer (boutons de la carte, liens, hotspots info).
+   *  Bleu par défaut si non renseigné. */
+  accentColor?: string;
+  /** Piste audio jouée pour tout le projet (sauf si un viewpoint en a sa propre). */
+  audio?: string;
 }
 
 export interface Project {

@@ -483,12 +483,14 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, isExpa
 
     const url = createTrackedObjectUrl(file);
     const sceneId = `scene_${Date.now()}`;
+    const isVideo = file.type.startsWith('video/');
 
     const newScene: Scene = {
       id: sceneId,
       title: file.name.replace(/\.[^/.]+$/, ""),
-      image: url,
-      thumbnail: url,
+      image: isVideo ? '' : url,
+      thumbnail: isVideo ? '' : url,
+      video: isVideo ? url : undefined,
       position: pendingPosition,
       north: 0,
       links: [],
@@ -863,7 +865,7 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, isExpa
             )}
             <input 
               type="file" 
-              accept="image/*" 
+              accept="image/*,video/*" 
               ref={fileInputRef} 
               style={{ display: 'none' }} 
               onChange={handleSceneFileChange} 
@@ -1079,7 +1081,7 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, isExpa
             )}
             <input 
               type="file" 
-              accept="image/*" 
+              accept="image/*,video/*" 
               ref={fileInputRef} 
               style={{ display: 'none' }} 
               onChange={handleSceneFileChange} 
@@ -1117,7 +1119,7 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, isExpa
             </div>
             <input 
               type="file" 
-              accept="image/*" 
+              accept="image/*,video/*" 
               ref={mapFileRef} 
               style={{ display: 'none' }} 
               onChange={handleFileUpload} 

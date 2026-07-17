@@ -6,13 +6,14 @@ import SphereViewer from '../components/Viewer/SphereViewer';
 import PasswordGate from '../components/Viewer/PasswordGate';
 import ProjectMap from '../components/Map/ProjectMap';
 import { loadCloudProject } from '../services/cloudflareApi';
+import { getAccentColor, darkenHex } from '../utils/theme';
 
-const mapBtnStyle: React.CSSProperties = {
+const makeMapBtnStyle = (accent: string, accentDark: string): React.CSSProperties => ({
   width: '44px',
   height: '44px',
   borderRadius: '50%',
   border: '1px solid rgba(255,255,255,0.12)',
-  background: 'linear-gradient(180deg, rgba(0, 136, 255, 0.85) 0%, rgba(0, 85, 204, 0.85) 100%)',
+  background: `linear-gradient(180deg, ${accent} 0%, ${accentDark} 100%)`,
   color: 'white',
   cursor: 'pointer',
   fontSize: '1.3rem',
@@ -20,14 +21,17 @@ const mapBtnStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.4), inset 0 -1.5px 1px rgba(0,0,0,0.2), 0 0 0 3px rgba(0,122,204,0.35), 0 4px 10px rgba(0,0,0,0.4)',
-};
+  boxShadow: `inset 0 1px 1px rgba(255,255,255,0.4), inset 0 -1.5px 1px rgba(0,0,0,0.2), 0 0 0 3px ${accent}59, 0 4px 10px rgba(0,0,0,0.4)`,
+});
 
 const ViewerPage: React.FC = () => {
   const setMode = useProjectStore((state) => state.setMode);
   const setProject = useProjectStore((state) => state.setProject);
   const selectScene = useProjectStore((state) => state.selectScene);
   const project = useProjectStore((state) => state.project);
+  const accentColor = getAccentColor(project);
+  const accentColorDark = darkenHex(accentColor);
+  const mapBtnStyle = makeMapBtnStyle(accentColor, accentColorDark);
   const selectedSceneId = useProjectStore((state) => state.selectedSceneId);
   const scenes = useProjectStore((state) => state.scenes);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -36,17 +40,6 @@ const ViewerPage: React.FC = () => {
   const [showMap, setShowMap] = useState(true);
   const [mapExpanded, setMapExpanded] = useState(false);
   const [status, setStatus] = useState<'loading' | 'password-required' | 'ready' | 'error'>('loading');
-
-  // Scale the mini-map so the whole block (map + rim buttons) always takes ~half the screen width.
-  // Computed in JS because CSS calc() division by a length is unreliable across mobile browsers.
-  const [mapScale, setMapScale] = useState(
-    typeof window !== 'undefined' ? (window.innerWidth * 0.5) / 430 : 0.45
-  );
-  useEffect(() => {
-    const onResize = () => setMapScale((window.innerWidth * 0.5) / 430);
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
 
   useEffect(() => {
     setMode('viewer');
@@ -174,123 +167,60 @@ const ViewerPage: React.FC = () => {
         </button>
       )}
 
-      {/* Mobile-only FAB: open the map full-screen (mini-map is hidden on phones) */}
-      <button
-        className="viewer-map-fab"
-        onClick={() => { setShowMap(true); setMapExpanded(true); }}
-        title="Ouvrir le plan en plein écran"
-        style={{
-          display: 'none',
-          position: 'absolute',
-          bottom: '15px',
-          right: '15px',
-          zIndex: 1100,
-          ...mapBtnStyle,
-        }}
-      >
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21" />
-          <line x1="9" y1="3" x2="9" y2="18" />
-          <line x1="15" y1="6" x2="15" y2="21" />
-        </svg>
-      </button>
-
-      {/* Close map button (bottom-right), used instead of the in-map ✕ which is blocked on mobile */}
-      {showMap && !mapExpanded && (
-        <button
-          onClick={() => setShowMap(false)}
-          title="Fermer le plan"
-          style={{
-            position: 'fixed',
-            bottom: '20px',
-            right: '20px',
-            zIndex: 3000,
-            width: '48px',
-            height: '48px',
-            borderRadius: '50%',
-            border: '1px solid rgba(255,255,255,0.25)',
-            background: 'rgba(0,0,0,0.65)',
-            color: 'white',
-            cursor: 'pointer',
-            fontSize: '1.2rem',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            backdropFilter: 'blur(6px)',
-            boxShadow: '0 4px 14px rgba(0,0,0,0.5)',
-            touchAction: 'manipulation',
-          }}
-        >
-          ✕
-        </button>
-      )}
-
-      {/* Mini map overlay: round plan + controls at constant radius */}
+      {/* Mini map overlay: round plan (30vw) pinned top-right, with its
+          controls orbiting on the outside of the circle. The wrapper is larger
+          than the map so the buttons sit outside the rim. */}
       {showMap && !mapExpanded && (
         <div
           className="viewer-minimap"
           style={{
             position: 'absolute',
-            top: '65px',
-            right: '35px', // Spaced to prevent floating buttons on the right from clipping
+            top: '15px',
+            right: '32px',
             zIndex: 1050,
-            width: '320px',
-            height: '320px',
+            width: '44vw',
+            height: '44vw',
+            maxWidth: '528px',
+            maxHeight: '528px',
           }}
         >
-          {/* Scaled wrapper: keeps the 320px layout (peripheral buttons) but renders smaller on mobile */}
+          {/* Circular map container, centered, sized to 30vw of the screen */}
           <div
-            className="viewer-minimap__inner"
-            style={{ position: 'relative', width: '320px', height: '320px', transform: `translate(-50%, -50%) scale(${mapScale})` }}
+            style={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: '68.18%', // 30vw of a 44vw wrapper
+              height: '68.18%',
+              borderRadius: '50%',
+              border: '1px solid rgba(255,255,255,0.12)',
+              overflow: 'hidden',
+              boxShadow: `inset 0 1px 3px rgba(0,0,0,0.3), 0 0 0 3px ${accentColor}59, 0 12px 36px rgba(0,0,0,0.45)`,
+              background: '#111',
+            }}
           >
-            {/* Circular map container (320px x 320px) */}
-            <div
-              style={{
-                width: '100%',
-                height: '100%',
-                borderRadius: '50%',
-                border: '1px solid rgba(255,255,255,0.12)',
-                overflow: 'hidden',
-                boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.3), 0 0 0 3px rgba(0,122,204,0.35), 0 12px 36px rgba(0,0,0,0.45)',
-                background: '#111',
-              }}
-            >
-              <ProjectMap mapRef={mapRef} hideZoomControl isExpanded={false} />
-            </div>
+            <ProjectMap mapRef={mapRef} hideZoomControl isExpanded={false} />
+          </div>
 
-          {/* Floating buttons (44px) at constant radius of 198px from center (160px, 160px) to prevent touching */}
-          
-          {/* 1. Zoom + (7h) */}
+          {/* Controls placed ON the periphery of the circle (centre 50%,50%,
+              radius = 34.09% of the wrapper = the circle's edge).
+              Left arc (top→bottom): +, −, recentrer, agrandir.
+              Top-right of the circle: close (✕) only. */}
           <button
             onClick={() => mapRef.current?.zoomIn()}
             title="Zoom avant"
-            style={{
-              ...mapBtnStyle,
-              position: 'absolute',
-              left: '29px',
-              top: '289px',
-              zIndex: 1100,
-            }}
+            style={{ ...mapBtnStyle, position: 'absolute', left: '20.5%', top: '32.95%', transform: 'translate(-50%, -50%)', width: '48px', height: '48px', fontSize: '1.4rem', borderRadius: '50%', zIndex: 1100 }}
           >
             +
           </button>
-
-          {/* 2. Zoom - (Left, 170deg) */}
           <button
             onClick={() => mapRef.current?.zoomOut()}
             title="Zoom arrière"
-            style={{
-              ...mapBtnStyle,
-              position: 'absolute',
-              left: '-55px',
-              top: '189px',
-              zIndex: 1100,
-            }}
+            style={{ ...mapBtnStyle, position: 'absolute', left: '15.91%', top: '50%', transform: 'translate(-50%, -50%)', width: '48px', height: '48px', fontSize: '1.4rem', borderRadius: '50%', zIndex: 1100 }}
           >
             −
           </button>
-
-          {/* 3. Recentrer (Left, 190deg) */}
           <button
             onClick={() => {
               const state = useProjectStore.getState();
@@ -300,50 +230,27 @@ const ViewerPage: React.FC = () => {
               }
             }}
             title="Recentrer sur le viewpoint actif"
-            style={{
-              ...mapBtnStyle,
-              position: 'absolute',
-              left: '-55px',
-              top: '59px',
-              zIndex: 1100,
-            }}
+            style={{ ...mapBtnStyle, position: 'absolute', left: '20.5%', top: '67.05%', transform: 'translate(-50%, -50%)', width: '48px', height: '48px', borderRadius: '50%', zIndex: 1100 }}
           >
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M12 2C8.5 2 5.5 5 5.5 8.5c0 4.5 6.5 10 6.5 10s6.5-5.5 6.5-10C18.5 5 15.5 2 12 2zm0 10c-1.93 0-3.5-1.57-3.5-3.5S10.07 5 12 5s3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z" fill="currentColor" stroke="none" />
               <ellipse cx="12" cy="20" rx="6" ry="2" stroke="currentColor" stroke-width="2" fill="none" />
             </svg>
           </button>
-
-          {/* 4. Agrandir (Left, 210deg) */}
           <button
             onClick={() => setMapExpanded(true)}
             title="Agrandir le plan"
-            style={{
-              ...mapBtnStyle,
-              position: 'absolute',
-              left: '29px',
-              top: '-41px',
-              zIndex: 1100,
-            }}
+            style={{ ...mapBtnStyle, position: 'absolute', left: '32.95%', top: '79.5%', transform: 'translate(-50%, -50%)', width: '48px', height: '48px', fontSize: '1.3rem', borderRadius: '50%', zIndex: 1100 }}
           >
             ⤢
           </button>
-
-          {/* 5. Fermer (✕) (1h, right side) */}
           <button
             onClick={() => setShowMap(false)}
             title="Fermer le plan"
-            style={{
-              ...mapBtnStyle,
-              position: 'absolute',
-              left: '219px',
-              top: '-41px',
-              zIndex: 1100,
-            }}
+            style={{ ...mapBtnStyle, position: 'absolute', left: '74.1%', top: '25.9%', transform: 'translate(-50%, -50%)', width: '48px', height: '48px', fontSize: '1.3rem', borderRadius: '50%', zIndex: 1100 }}
           >
             ✕
           </button>
-          </div>
         </div>
       )}
 

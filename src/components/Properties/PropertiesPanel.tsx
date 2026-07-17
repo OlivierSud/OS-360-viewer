@@ -6,6 +6,7 @@ import { createTrackedObjectUrl } from '../../services/mediaRegistry';
 import { createProjectId } from '../../storage/projectRegistry';
 import type { Project } from '../../models/Project';
 import { sha256 } from '../../utils/crypto';
+import { DEFAULT_ACCENT_COLOR } from '../../utils/theme';
 
 /* ── Small reusable field row ── */
 const Field: React.FC<{
@@ -44,9 +45,66 @@ const mapActionBtnStyle: React.CSSProperties = {
   transition: 'background 0.15s',
 };
 
+/* ── Reusable audio track picker ── */
+const AudioField: React.FC<{
+  label: string;
+  value: string | undefined;
+  onChange: (url: string | undefined) => void;
+  hint?: string;
+}> = ({ label, value, onChange, hint }) => {
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) onChange(createTrackedObjectUrl(file));
+    e.target.value = '';
+  };
+
+  return (
+    <Field label={label}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <input
+          type="text"
+          value={value ?? ''}
+          placeholder="Lien audio ou fichier local…"
+          onChange={(e) => onChange(e.target.value.trim() || undefined)}
+          style={inputStyle}
+        />
+        <label
+          style={{
+            padding: '8px',
+            border: '1px dashed #555',
+            borderRadius: '5px',
+            color: '#aaa',
+            cursor: 'pointer',
+            textAlign: 'center',
+            fontSize: '0.82rem',
+          }}
+        >
+          📁 Choisir un fichier audio
+          <input type="file" accept="audio/*" style={{ display: 'none' }} onChange={handleFile} />
+        </label>
+        {value && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <audio src={value} controls style={{ flex: 1, height: '32px' }} />
+            <button
+              onClick={() => onChange(undefined)}
+              title="Retirer l'audio"
+              style={{ background: 'none', border: 'none', color: '#d32f2f', cursor: 'pointer', fontSize: '1rem', padding: '0 4px' }}
+            >
+              🗑️
+            </button>
+          </div>
+        )}
+        {hint && <span style={{ fontSize: '0.72rem', color: '#555', fontStyle: 'italic' }}>{hint}</span>}
+      </div>
+    </Field>
+  );
+};
+
 /* ══════════════════════════════════════════════════════════
    Project Settings Panel
-══════════════════════════════════════════════════════════ */
+ ══════════════════════════════════════════════════════════ */
 const ProjectSettingsPanel: React.FC<{ mobileOpen?: boolean; onMobileClose?: () => void }> = ({ mobileOpen, onMobileClose }) => {
   const project = useProjectStore((s) => s.project);
   const updateProjectTitle = useProjectStore((s) => s.updateProjectTitle);
@@ -242,6 +300,40 @@ const ProjectSettingsPanel: React.FC<{ mobileOpen?: boolean; onMobileClose?: () 
           ))}
         </select>
       </Field>
+
+      {/* ── Couleur d'accent du viewer ── */}
+      <Field label="Couleur des boutons (viewer)">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <input
+            type="color"
+            value={meta.accentColor ?? DEFAULT_ACCENT_COLOR}
+            onChange={(e) => updateMeta({ accentColor: e.target.value })}
+            style={{ width: '40px', height: '32px', padding: 0, border: '1px solid #444', borderRadius: '4px', background: 'none', cursor: 'pointer' }}
+            title="Choisir la couleur d'accent du viewer"
+          />
+          <input
+            type="text"
+            value={meta.accentColor ?? ''}
+            placeholder={DEFAULT_ACCENT_COLOR}
+            onChange={(e) => updateMeta({ accentColor: e.target.value.trim() || undefined })}
+            style={{ ...inputStyle, flex: 1 }}
+          />
+          <button
+            onClick={() => updateMeta({ accentColor: undefined })}
+            title="Réinitialiser (bleu par défaut)"
+            style={{ background: '#252526', border: '1px solid #444', color: '#aaa', borderRadius: '4px', cursor: 'pointer', padding: '6px 8px', fontSize: '0.8rem' }}
+          >
+            Défaut
+          </button>
+        </div>
+      </Field>
+
+      <AudioField
+        label="Audio du projet"
+        value={meta.audio}
+        onChange={(url) => updateMeta({ audio: url })}
+        hint="Joué pour tout le projet, sauf si un viewpoint possède sa propre piste."
+      />
 
       {/* ── Splash image ── */}
       <div style={{ borderTop: '1px solid #333', paddingTop: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -1088,6 +1180,15 @@ const HotspotPropertiesPanel: React.FC<{ mobileOpen?: boolean; onMobileClose?: (
                 </div>
               )
             )}
+
+            <div style={{ borderTop: '1px solid #333', paddingTop: '15px' }}>
+              <AudioField
+                label="Audio du viewpoint"
+                value={selectedScene.audio}
+                onChange={(url) => updateScene(selectedScene.id, { audio: url })}
+                hint="Remplace la piste audio du projet pour ce viewpoint uniquement."
+              />
+            </div>
           </div>
         </div>
         )

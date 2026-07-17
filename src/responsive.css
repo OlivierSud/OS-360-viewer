@@ -152,6 +152,7 @@
     bottom: 0;
     top: auto;
     width: 100%;
+    height: auto;
     max-height: 55vh;
     overflow-y: auto;
     border-left: none;

@@ -232,7 +232,7 @@ const ProjectSettingsPanel: React.FC<{ mobileOpen?: boolean; onMobileClose?: () 
   return (
     <aside
       className={`properties-panel${mobileOpen ? ' mobile-open' : ''}`}
-      style={{ padding: '15px', color: 'white', display: 'flex', flexDirection: 'column', gap: '16px', overflowY: 'auto' }}
+      style={{ padding: '15px', color: 'white', display: 'flex', flexDirection: 'column', gap: '16px', overflowY: 'auto', minHeight: 0 }}
     >
       {onMobileClose && (
         <button

@@ -28,6 +28,7 @@ const ViewerPage: React.FC = () => {
   const setMode = useProjectStore((state) => state.setMode);
   const setProject = useProjectStore((state) => state.setProject);
   const selectScene = useProjectStore((state) => state.selectScene);
+  const setCurrentProjectId = useProjectStore((state) => state.setCurrentProjectId);
   const project = useProjectStore((state) => state.project);
   const accentColor = getAccentColor(project);
   const accentColorDark = darkenHex(accentColor);
@@ -81,9 +82,11 @@ const ViewerPage: React.FC = () => {
           if (cancelled) return;
           // A protected project shows the password gate before revealing the tour.
           if (record.project_data.project.passwordHash) {
+            setCurrentProjectId(projectId);
             setStatus('password-required');
             return;
           }
+          setCurrentProjectId(projectId);
           selectScene(record.project_data.project.defaultScene ?? record.project_data.scenes[0]?.id ?? null);
           setStatus('ready');
         }, remaining);
@@ -108,6 +111,8 @@ const ViewerPage: React.FC = () => {
   const handleUnlocked = () => {
     const state = useProjectStore.getState();
     const meta = state.project?.project;
+    const projectId = searchParams.get('id');
+    if (projectId) setCurrentProjectId(projectId);
     selectScene(meta?.defaultScene ?? state.scenes[0]?.id ?? null);
     setStatus('ready');
   };
@@ -198,7 +203,7 @@ const ViewerPage: React.FC = () => {
               background: '#111',
             }}
           >
-            <ProjectMap mapRef={mapRef} hideZoomControl isExpanded={false} />
+            <ProjectMap mapRef={mapRef} hideZoomControl />
           </div>
 
           {/* Controls placed ON the periphery of the circle (centre 50%,50%,
@@ -269,7 +274,7 @@ const ViewerPage: React.FC = () => {
             background: '#111',
           }}
         >
-          <ProjectMap mapRef={mapRef} hideZoomControl={true} isExpanded={true} />
+          <ProjectMap mapRef={mapRef} hideZoomControl={true} />
           
           {/* Controls column inside the expanded map */}
           <div

@@ -6,24 +6,43 @@ import { useProjectStore } from '../../state/projectStore';
 import type { Scene } from '../../models/Scene';
 import { createTrackedObjectUrl } from '../../services/mediaRegistry';
 
-const FitBounds: React.FC<{ bounds: L.LatLngBoundsExpression; isExpanded?: boolean }> = ({ bounds }) => {
+// In viewer mode the map is shown inside a circular minimap. To make the plan
+// fill that circle (instead of leaving empty margins in the corners), we fit
+// with a negative padding proportional to the container size. This zooms in so
+// the image covers the whole circle.
+const circlePadding = (map: L.Map): L.Point => {
+  const size = map.getSize();
+  const pad = Math.round(Math.min(size.x, size.y) * 0.15);
+  return L.point(-pad, -pad);
+};
+
+const FitBounds: React.FC<{ bounds: L.LatLngBoundsExpression; firstFitRef: React.MutableRefObject<boolean> }> = ({ bounds, firstFitRef }) => {
   const map = useMap();
   useEffect(() => {
-    // Calculate fitZoom with a safety padding
-    const fitZoom = map.getBoundsZoom(bounds, false, L.point(30, 30));
+    const mode = useProjectStore.getState().mode;
+    // Calculate fitZoom; in the viewer minimap, use a negative padding so the
+    // plan fills the circular overlay.
+    const fitZoom = map.getBoundsZoom(bounds, false, mode === 'viewer' ? circlePadding(map) : L.point(30, 30));
     // Allow zooming out 3 levels further than the fit zoom to see the surroundings
     const minZoomLevel = fitZoom - 3;
     map.setMinZoom(minZoomLevel);
     map.setMaxZoom(Math.max(2, fitZoom + 2));
     
     const center = L.latLngBounds(bounds as any).getCenter();
-    // Always start fitted perfectly to the container bounds
-    map.setView(center, fitZoom);
-  }, [map, bounds]);
+
+    if (firstFitRef.current || mode === 'editor') {
+      // First load (or editor): fit perfectly to the container bounds.
+      firstFitRef.current = false;
+      map.setView(center, fitZoom);
+    }
+    // In viewer mode after the first load, do NOT refit: the map is recentered
+    // on the starting viewpoint by RecenterOnProjectChange when the project
+    // changes (e.g. via a Portal). We only keep the zoom bounds up to date.
+  }, [map, bounds, firstFitRef]);
   return null;
 };
 
-const FitGeoBounds: React.FC<{ scenes: Scene[]; isExpanded?: boolean }> = ({ scenes }) => {
+const FitGeoBounds: React.FC<{ scenes: Scene[]; firstFitRef: React.MutableRefObject<boolean> }> = ({ scenes, firstFitRef }) => {
   const map = useMap();
   useEffect(() => {
     if (scenes.length === 0) {
@@ -42,14 +61,19 @@ const FitGeoBounds: React.FC<{ scenes: Scene[]; isExpanded?: boolean }> = ({ sce
 
     // If there is only one viewpoint, or all viewpoints are at the same spot
     if (minLat === maxLat && minLon === maxLon) {
-      map.setView([minLat, minLon], 15);
       map.setMinZoom(8);
       map.setMaxZoom(17);
+      const mode = useProjectStore.getState().mode;
+      if (firstFitRef.current || mode === 'editor') {
+        firstFitRef.current = false;
+        map.setView([minLat, minLon], 15);
+      }
       return;
     }
 
     const bounds = L.latLngBounds([minLat, minLon], [maxLat, maxLon]);
-    const fitZoom = map.getBoundsZoom(bounds, false, L.point(50, 50));
+    const mode = useProjectStore.getState().mode;
+    const fitZoom = map.getBoundsZoom(bounds, false, mode === 'viewer' ? circlePadding(map) : L.point(50, 50));
     // Allow zooming out 5 levels further than the viewpoints bounds for geographic map
     const minZoomLevel = Math.max(1, fitZoom - 5);
     // Don't zoom in closer than fitZoom + 2, cap at 17 to prevent zooming into empty space
@@ -57,10 +81,13 @@ const FitGeoBounds: React.FC<{ scenes: Scene[]; isExpanded?: boolean }> = ({ sce
 
     map.setMinZoom(minZoomLevel);
     map.setMaxZoom(maxZoomLevel);
-    
-    // Always start fitted perfectly to the container bounds
-    map.setView(bounds.getCenter(), fitZoom);
-  }, [map, scenes]);
+
+    if (firstFitRef.current || mode === 'editor') {
+      // Always start fitted perfectly to the container bounds
+      firstFitRef.current = false;
+      map.setView(bounds.getCenter(), fitZoom);
+    }
+  }, [map, scenes, firstFitRef]);
   return null;
 };
 
@@ -88,6 +115,32 @@ const CenterOnSelected: React.FC = () => {
     }
   }, [map, selectedSceneId]);
 
+  return null;
+};
+
+const RecenterOnProjectChange: React.FC = () => {
+  const map = useMap();
+  const currentProjectId = useProjectStore((state) => state.currentProjectId);
+  const selectedSceneId = useProjectStore((state) => state.selectedSceneId);
+  const prevProjectId = useRef<string | null>(null);
+
+  useEffect(() => {
+    // Only relevant in the viewer (e.g. navigating between projects via a Portal).
+    if (useProjectStore.getState().mode !== 'viewer') return;
+    // Skip the very first project load: FitBounds already fitted the whole map.
+    if (prevProjectId.current === null) {
+      prevProjectId.current = currentProjectId;
+      return;
+    }
+    if (currentProjectId === prevProjectId.current) return;
+    prevProjectId.current = currentProjectId;
+
+    // The starting viewpoint of the new project is the selected scene.
+    const scene = useProjectStore.getState().scenes.find((s) => s.id === selectedSceneId);
+    if (scene) {
+      map.panTo([scene.position.y, scene.position.x]);
+    }
+  }, [map, currentProjectId, selectedSceneId]);
   return null;
 };
 
@@ -266,10 +319,9 @@ const GeoSearch: React.FC = () => {
 interface ProjectMapProps {
   mapRef?: React.MutableRefObject<L.Map | null>;
   hideZoomControl?: boolean;
-  isExpanded?: boolean;
 }
 
-const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, isExpanded }) => {
+const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl }) => {
   const project = useProjectStore((state) => state.project);
   const scenes = useProjectStore((state) => state.scenes);
   const setMapConfig = useProjectStore((state) => state.setMapConfig);
@@ -296,8 +348,21 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, isExpa
   const [pendingPosition, setPendingPosition] = useState<{x: number, y: number} | null>(null);
   const [travelPos, setTravelPos] = useState<[number, number] | null>(null);
   const prevSceneIdRef = useRef<string | null>(selectedSceneId);
+  const firstFitRef = useRef(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mapFileRef = useRef<HTMLInputElement>(null);
+  const currentProjectId = useProjectStore((state) => state.currentProjectId);
+  const prevProjectIdRef = useRef<string | null>(null);
+
+  // When the project changes (e.g. via a Portal), the previous travel
+  // animation's position is stale and references a viewpoint that no longer
+  // exists. Reset it so the active marker snaps to the new project's scene.
+  useEffect(() => {
+    if (prevProjectIdRef.current !== null && prevProjectIdRef.current !== currentProjectId) {
+      setTravelPos(null);
+    }
+    prevProjectIdRef.current = currentProjectId;
+  }, [currentProjectId]);
 
   const mapControlButtonStyle = (isActive: boolean, activeColor = '#d32f2f', inactiveColor = 'rgba(0,0,0,0.55)') => ({
     width: '130px',
@@ -712,8 +777,9 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, isExpa
           >
             {mapRef && <MapRefBridge mapRef={mapRef} />}
             <MapEvents />
-            <FitBounds bounds={bounds} isExpanded={isExpanded} />
+            <FitBounds bounds={bounds} firstFitRef={firstFitRef} />
             <CenterOnSelected />
+            <RecenterOnProjectChange />
             <ImageOverlay
               url={mapConfig.image!}
               bounds={bounds}
@@ -927,8 +993,9 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, isExpa
           >
             {mapRef && <MapRefBridge mapRef={mapRef} />}
             <MapEvents />
-            <FitGeoBounds scenes={scenes} isExpanded={isExpanded} />
+            <FitGeoBounds scenes={scenes} firstFitRef={firstFitRef} />
             <CenterOnSelected />
+            <RecenterOnProjectChange />
             {mode === 'editor' && <GeoSearch />}
             <TileLayer
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'

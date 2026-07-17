@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Project, MapConfig } from '../models/Project';
+import type { Project, ProjectMetadata, MapConfig } from '../models/Project';
 import type { Scene } from '../models/Scene';
 import type { Hotspot } from '../models/Hotspot';
 
@@ -41,6 +41,7 @@ interface ProjectState {
   setShowProjectSettings: (val: boolean) => void;
   updateProjectTitle: (title: string) => void;
   updateProjectPassword: (hash: string | undefined) => void;
+  setProjectMeta: (updates: Partial<ProjectMetadata>) => void;
 }
 
 export const useProjectStore = create<ProjectState>((set) => ({
@@ -239,6 +240,11 @@ export const useProjectStore = create<ProjectState>((set) => ({
   updateProjectPassword: (hash) => set((state) => ({
     project: state.project
       ? { ...state.project, project: { ...state.project.project, passwordHash: hash } }
+      : null
+  })),
+  setProjectMeta: (updates) => set((state) => ({
+    project: state.project
+      ? { ...state.project, project: { ...state.project.project, ...updates } }
       : null
   })),
   addHotspot: (sceneId, hotspot) => set((state) => {

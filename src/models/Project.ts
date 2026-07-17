@@ -20,8 +20,10 @@ export interface ProjectMetadata {
   /** Couleur d'accent du viewer (boutons de la carte, liens, hotspots info).
    *  Bleu par défaut si non renseigné. */
   accentColor?: string;
-  /** Piste audio jouée pour tout le projet (sauf si un viewpoint en a sa propre). */
+  /** Pista audio jouée pour tout le projet (sauf si un viewpoint en a sa propre). */
   audio?: string;
+  /** Active le mode VR sur mobile (gyroscope + bouton plein écran VR). */
+  enableVR?: boolean;
 }
 
 export interface Project {

@@ -116,6 +116,7 @@ const ProjectSettingsPanel: React.FC<{ mobileOpen?: boolean; onMobileClose?: () 
   const scenes = useProjectStore((s) => s.scenes);
 
   const updateProjectPassword = useProjectStore((s) => s.updateProjectPassword);
+  const setProjectMeta = useProjectStore((s) => s.setProjectMeta);
 
   const [copied, setCopied] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -811,6 +812,22 @@ const ProjectSettingsPanel: React.FC<{ mobileOpen?: boolean; onMobileClose?: () 
             )}
           </div>
         )}
+
+        {/* VR mode (mobile) */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '9px', cursor: 'pointer', fontSize: '0.85rem', color: '#e0e0e0' }}>
+            <input
+              type="checkbox"
+              checked={Boolean(project?.project?.enableVR)}
+              onChange={(e) => setProjectMeta({ enableVR: e.target.checked })}
+              style={{ width: '16px', height: '16px', accentColor: '#007acc', cursor: 'pointer' }}
+            />
+            Activer le mode VR (mobile)
+          </label>
+          <div style={{ fontSize: '0.75rem', color: '#666', lineHeight: 1.4 }}>
+            Affiche un bouton VR plein écran sur mobile (gyroscope + vue stéréoscopique pour casque cardboard).
+          </div>
+        </div>
       </div>
 
       <div style={{ borderTop: '1px solid #333', paddingTop: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>

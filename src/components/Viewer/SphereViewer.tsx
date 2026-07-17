@@ -6,6 +6,8 @@ import '@photo-sphere-viewer/markers-plugin/index.css';
 import { VideoPlugin } from '@photo-sphere-viewer/video-plugin';
 import '@photo-sphere-viewer/video-plugin/index.css';
 import { EquirectangularVideoAdapter } from '@photo-sphere-viewer/equirectangular-video-adapter';
+import { GyroscopePlugin } from '@photo-sphere-viewer/gyroscope-plugin';
+import { StereoPlugin } from '@photo-sphere-viewer/stereo-plugin';
 import { useProjectStore } from '../../state/projectStore';
 import { listCloudProjects } from '../../services/cloudflareApi';
 import { getAccentColor } from '../../utils/theme';
@@ -127,6 +129,12 @@ const SphereViewer: React.FC = () => {
 
   const selectedScene = scenes.find(s => s.id === selectedSceneId);
 
+  // VR mode (mobile) is only available in the public viewer, and only when the
+  // project explicitly enables it. Gyroscope lets the user look around by moving
+  // the phone; the stereo plugin provides the cardboard/stereoscopic VR view.
+  const vrEnabled = mode === 'viewer' && Boolean(project?.project?.enableVR);
+  const vrEnabledRef = useRef(vrEnabled);
+
   // Whether an audio track is available for the current viewpoint (its own or
   // the project's ambient one).
   const hasAudio = Boolean(selectedScene?.audio || project?.project?.audio);
@@ -167,6 +175,7 @@ const SphereViewer: React.FC = () => {
   const [targetProjectTitle, setTargetProjectTitle] = useState<string | null>(null);
   const [fullscreenImageUrl, setFullscreenImageUrl] = useState<string | null>(null);
   const [fullscreenVideoUrl, setFullscreenVideoUrl] = useState<string | null>(null);
+  const [vrActive, setVrActive] = useState(false);
 
   // Scene transition state: freeze current view + zoom-in, load next panorama
   // in the background, then reveal it directly once ready.
@@ -214,6 +223,11 @@ const SphereViewer: React.FC = () => {
       const isCurrentVideo = Boolean(selectedScene?.video);
       if (isCurrentVideo) {
         plugins.push([VideoPlugin, {}]);
+      }
+      // VR plugins (mobile): gyroscope look-around + stereoscopic cardboard view.
+      if (vrEnabled) {
+        plugins.push([GyroscopePlugin, {}]);
+        plugins.push([StereoPlugin, {}]);
       }
 
       viewerRef.current = new Viewer({
@@ -365,10 +379,11 @@ const SphereViewer: React.FC = () => {
       return;
     }
 
-    // The PSV adapter is fixed at viewer creation, so switching between an
-    // image and a video scene requires re-creating the viewer.
-    if (currentIsVideoRef.current !== isVideo) {
-      console.log('[SphereViewer] recreating viewer (type changed)');
+    // The PSV adapter and the VR plugins are fixed at viewer creation. Switching
+    // between an image and a video scene, or toggling VR mode, requires
+    // re-creating the viewer.
+    if (currentIsVideoRef.current !== isVideo || vrEnabledRef.current !== vrEnabled) {
+      console.log('[SphereViewer] recreating viewer (type or VR changed)');
       setSceneLoading(true);
       try {
         viewerRef.current.destroy();
@@ -385,6 +400,8 @@ const SphereViewer: React.FC = () => {
       }
       createViewer();
       currentIsVideoRef.current = isVideo;
+      vrEnabledRef.current = vrEnabled;
+      setVrActive(false);
       return;
     }
 
@@ -437,7 +454,7 @@ const SphereViewer: React.FC = () => {
           reveal();
         });
     }, 320);
-  }, [selectedScene?.image, selectedScene?.video]);
+  }, [selectedScene?.image, selectedScene?.video, vrEnabled]);
 
   // Clean up the viewer only on component unmount
   useEffect(() => {
@@ -1131,6 +1148,56 @@ const SphereViewer: React.FC = () => {
             <IconTrash /> Delete Hotspot
           </button>
         </div>
+      )}
+
+      {/* VR button (mobile): start the stereoscopic + gyroscope experience */}
+      {vrEnabled && (
+        <button
+          onClick={() => {
+            const v = viewerRef.current;
+            if (!v) return;
+            const gyro = v.getPlugin('gyroscope') as any;
+            const stereo = v.getPlugin('stereo') as any;
+            if (!vrActive) {
+              try { gyro?.start?.(); } catch { /* permission may be required */ }
+              try { stereo?.start?.(); } catch { /* ignore */ }
+              if (document.documentElement.requestFullscreen) {
+                document.documentElement.requestFullscreen().catch(() => {});
+              }
+              setVrActive(true);
+            } else {
+              try { stereo?.stop?.(); } catch { /* ignore */ }
+              try { gyro?.stop?.(); } catch { /* ignore */ }
+              setVrActive(false);
+            }
+          }}
+          title={vrActive ? 'Quitter le mode VR' : 'Mode VR (casque cardboard)'}
+          style={{
+            position: 'absolute',
+            bottom: '15px',
+            right: '15px',
+            zIndex: 1250,
+            width: '52px',
+            height: '52px',
+            borderRadius: '50%',
+            border: '1px solid rgba(255,255,255,0.15)',
+            background: vrActive ? '#007acc' : 'rgba(14,14,16,0.8)',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+            color: 'white',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 4px 14px rgba(0,0,0,0.5)',
+          }}
+        >
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="2" y="7" width="20" height="10" rx="3" />
+            <circle cx="7.5" cy="12" r="2" />
+            <circle cx="16.5" cy="12" r="2" />
+          </svg>
+        </button>
       )}
     </div>
   );

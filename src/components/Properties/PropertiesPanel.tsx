@@ -52,7 +52,6 @@ const AudioField: React.FC<{
   onChange: (url: string | undefined) => void;
   hint?: string;
 }> = ({ label, value, onChange, hint }) => {
-  const fileRef = useRef<HTMLInputElement>(null);
 
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

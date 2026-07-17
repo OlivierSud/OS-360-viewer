@@ -8,7 +8,7 @@ import '@photo-sphere-viewer/video-plugin/index.css';
 import { EquirectangularVideoAdapter } from '@photo-sphere-viewer/equirectangular-video-adapter';
 import { useProjectStore } from '../../state/projectStore';
 import { listCloudProjects } from '../../services/cloudflareApi';
-import { getAccentColor, darkenHex } from '../../utils/theme';
+import { getAccentColor } from '../../utils/theme';
 import type { Hotspot } from '../../models/Hotspot';
 
 function getYoutubeEmbedUrl(url: string): string | null {
@@ -123,7 +123,6 @@ const SphereViewer: React.FC = () => {
   // The configurable accent color only applies in the public viewer. In the
   // editor the controls (Add Hotspot, navigation links) keep the default blue.
   const accentColor = mode === 'viewer' ? getAccentColor(project) : '#007acc';
-  const accentColorDark = darkenHex(accentColor);
 
   const selectedScene = scenes.find(s => s.id === selectedSceneId);
 
@@ -531,7 +530,6 @@ const SphereViewer: React.FC = () => {
       selectedScene.hotspots.forEach((hotspot) => {
         const isOpen = hotspot.id === openHotspotId;
         const isSelectedMove = isMovingHotspot && hotspot.id === selectedHotspotId;
-        const accentColorVal = hotspot.type === 'video' ? '#e50914' : hotspot.type === 'image' ? '#6a0dad' : '#007acc';
         const embedUrl = hotspot.type === 'video' ? getYoutubeEmbedUrl(hotspot.content) : null;
 
         // Icon marker (always visible). The popup is embedded as a CSS-positioned

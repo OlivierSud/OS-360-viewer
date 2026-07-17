@@ -119,6 +119,7 @@ const SphereViewer: React.FC = () => {
   const setIsMovingHotspot = useProjectStore((state) => state.setIsMovingHotspot);
   const isDeletingHotspot = useProjectStore((state) => state.isDeletingHotspot);
   const setIsDeletingHotspot = useProjectStore((state) => state.setIsDeletingHotspot);
+  const setSceneLoading = useProjectStore((state) => state.setSceneLoading);
 
   // The configurable accent color only applies in the public viewer. In the
   // editor the controls (Add Hotspot, navigation links) keep the default blue.
@@ -265,6 +266,12 @@ const SphereViewer: React.FC = () => {
         hasVideoPlugin: isCurrentVideo,
       });
 
+    // Signal the map that the scene finished loading (used to end the
+    // path-travel animation when the destination is reached).
+    viewerRef.current.addEventListener('panorama-loaded', () => {
+      setSceneLoading(false);
+    });
+
     const markersPlugin = viewerRef.current.getPlugin(MarkersPlugin) as any;
 
     viewerRef.current.addEventListener('position-updated', (e: any) => {
@@ -362,6 +369,7 @@ const SphereViewer: React.FC = () => {
     // image and a video scene requires re-creating the viewer.
     if (currentIsVideoRef.current !== isVideo) {
       console.log('[SphereViewer] recreating viewer (type changed)');
+      setSceneLoading(true);
       try {
         viewerRef.current.destroy();
       } catch {
@@ -389,6 +397,7 @@ const SphereViewer: React.FC = () => {
     if (!viewer) return;
     transitionInProgress.current = true;
     setIsTransitioning(true);
+    setSceneLoading(true);
 
     // Pause any playing audio during the transition.
     audioRef.current?.pause();
@@ -403,6 +412,7 @@ const SphereViewer: React.FC = () => {
     const reveal = () => {
       transitionInProgress.current = false;
       setIsTransitioning(false);
+      setSceneLoading(false);
       // 3. The new panorama is ready: reveal it directly, keeping the
       // zoomed-in level so the next view stays advanced (no zoom-out),
       // then (re)start the appropriate audio track for this viewpoint.

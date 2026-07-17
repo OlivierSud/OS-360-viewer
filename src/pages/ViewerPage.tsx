@@ -170,20 +170,18 @@ const ViewerPage: React.FC = () => {
       {/* Mini map overlay: round plan (30vw) pinned top-right, with its
           controls orbiting on the outside of the circle. The wrapper is larger
           than the map so the buttons sit outside the rim. */}
-      {showMap && !mapExpanded && (
-        <div
-          className="viewer-minimap"
-          style={{
-            position: 'absolute',
-            top: '15px',
-            right: '32px',
-            zIndex: 1050,
-            width: '44vw',
-            height: '44vw',
-            maxWidth: '528px',
-            maxHeight: '528px',
-          }}
-        >
+       {showMap && !mapExpanded && (
+         <div
+           className="viewer-minimap"
+           style={{
+             position: 'absolute',
+             top: '15px',
+             right: '15px',
+             zIndex: 1050,
+             width: 'min(42vw, 42vh, 520px)',
+             height: 'min(42vw, 42vh, 520px)',
+           }}
+         >
           {/* Circular map container, centered, sized to 30vw of the screen */}
           <div
             style={{

@@ -294,6 +294,8 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, isExpa
   const [linkStartSceneId, setLinkStartSceneId] = useState<string | null>(null);
   const [isDraggingAngle, setIsDraggingAngle] = useState(false);
   const [pendingPosition, setPendingPosition] = useState<{x: number, y: number} | null>(null);
+  const [travelPos, setTravelPos] = useState<[number, number] | null>(null);
+  const prevSceneIdRef = useRef<string | null>(selectedSceneId);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mapFileRef = useRef<HTMLInputElement>(null);
 
@@ -579,6 +581,43 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, isExpa
     return null;
   };
 
+  // Animate the active marker along the path (straight line between the
+  // previous and the new viewpoint) while a scene is loading. The travel
+  // marker reaches its destination exactly when the scene is loaded.
+  useEffect(() => {
+    const prevId = prevSceneIdRef.current;
+    prevSceneIdRef.current = selectedSceneId;
+    if (!prevId || prevId === selectedSceneId) return;
+
+    const fromScene = scenes.find((s) => s.id === prevId);
+    const toScene = scenes.find((s) => s.id === selectedSceneId);
+    if (!fromScene || !toScene) return;
+
+    const from: [number, number] = [fromScene.position.y, fromScene.position.x];
+    const to: [number, number] = [toScene.position.y, toScene.position.x];
+
+    let raf = 0;
+    let start = performance.now();
+    const FIXED = 650; // ms — minimum travel time for a smooth animation
+    const step = (now: number) => {
+      const loading = useProjectStore.getState().isSceneLoading;
+      const t = (now - start) / FIXED;
+      if (!loading && t >= 1) {
+        // Scene loaded and travel time elapsed: arrive at destination.
+        setTravelPos([to[0], to[1]]);
+        setTravelPos(null);
+        return;
+      }
+      const c = Math.max(0, Math.min(1, t));
+      const lat = from[0] + (to[0] - from[0]) * c;
+      const lng = from[1] + (to[1] - from[1]) * c;
+      setTravelPos([lat, lng]);
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [selectedSceneId, scenes]);
+
   const renderMarkerIcon = (scene: Scene) => {
     const isSelected = scene.id === selectedSceneId;
     const isRotateMode = isRotating && isSelected;
@@ -682,7 +721,7 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, isExpa
             {scenes.map(scene => (
               <Marker 
                 key={scene.id} 
-                position={[scene.position.y, scene.position.x]} 
+                position={scene.id === selectedSceneId && travelPos ? travelPos : [scene.position.y, scene.position.x]} 
                 icon={renderMarkerIcon(scene)}
                 draggable={isMoving}
                 eventHandlers={{ 
@@ -898,7 +937,7 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, isExpa
             {scenes.map(scene => (
               <Marker
                 key={scene.id}
-                position={[scene.position.y, scene.position.x]}
+                position={scene.id === selectedSceneId && travelPos ? travelPos : [scene.position.y, scene.position.x]}
                 icon={renderMarkerIcon(scene)}
                 draggable={isMoving}
                 eventHandlers={{ 

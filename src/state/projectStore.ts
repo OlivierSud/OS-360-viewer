@@ -12,7 +12,8 @@ interface ProjectState {
   mode: 'editor' | 'viewer';
   currentYaw: number;
   isMovingHotspot: boolean;
-  
+  isSceneLoading: boolean;
+
   // Actions
   setProject: (project: Project) => void;
   setScenes: (scenes: Scene[]) => void;
@@ -23,6 +24,7 @@ interface ProjectState {
   setMapConfig: (mapConfig: MapConfig) => void;
   setCurrentYaw: (yaw: number) => void;
   setCurrentProjectId: (id: string | null) => void;
+  setSceneLoading: (val: boolean) => void;
   setIsMovingHotspot: (val: boolean) => void;
   updateScene: (id: string, updates: Partial<Scene>) => void;
   removeScene: (id: string) => void;
@@ -50,9 +52,11 @@ export const useProjectStore = create<ProjectState>((set) => ({
   mode: 'editor',
   currentYaw: 0,
   isMovingHotspot: false,
+  isSceneLoading: false,
 
   setProject: (project) => set({ project, scenes: project.scenes }),
   setCurrentProjectId: (id) => set({ currentProjectId: id }),
+  setSceneLoading: (val) => set({ isSceneLoading: val }),
   setScenes: (scenes) => set((state) => ({ 
     scenes, 
     project: state.project ? { ...state.project, scenes } : null 

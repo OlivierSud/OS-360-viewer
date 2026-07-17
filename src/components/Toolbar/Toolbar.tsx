@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import ProjectDropdown from './ProjectDropdown';
+import HelpButton from './HelpButton';
 import { useProjectStore } from '../../state/projectStore';
 
 const Toolbar: React.FC = () => {
@@ -69,9 +70,12 @@ const Toolbar: React.FC = () => {
 
   return (
     <header className="toolbar">
-      <h1 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#d4d4d4', whiteSpace: 'nowrap' }}>
-        Virtual Tour Editor
-      </h1>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <h1 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#d4d4d4', whiteSpace: 'nowrap' }}>
+          Virtual Tour Editor
+        </h1>
+        <HelpButton />
+      </div>
 
       <div className="toolbar-actions">
         <div style={{

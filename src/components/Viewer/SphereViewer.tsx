@@ -295,6 +295,17 @@ const SphereViewer: React.FC = () => {
         hasVideoPlugin: isCurrentVideo,
       });
 
+    // Keep the PSV navbar always visible (it is hidden by default and only
+    // revealed on tap). Force it open so mobile users always see the controls.
+    try {
+      const navbar = containerRef.current?.querySelector('.psv-navbar') as HTMLElement | null;
+      if (navbar) {
+        navbar.classList.add('psv-navbar--open');
+        navbar.style.bottom = '0';
+        navbar.style.display = 'flex';
+      }
+    } catch { /* ignore */ }
+
     // Signal the map that the scene finished loading (used to end the
     // path-travel animation when the destination is reached).
     viewerRef.current.addEventListener('panorama-loaded', () => {
@@ -1190,11 +1201,11 @@ const SphereViewer: React.FC = () => {
           className="viewer-vr-button"
           style={{
             position: 'absolute',
-            bottom: '15px',
+            bottom: isMobile ? '60px' : '15px',
             right: '15px',
-            zIndex: 2100,
-            width: '52px',
-            height: '52px',
+            zIndex: 2200,
+            width: isMobile ? '52px' : '52px',
+            height: isMobile ? '52px' : '52px',
             borderRadius: '50%',
             border: vrActive ? '2px solid white' : `1px solid ${accentColor}`,
             background: accentColor,

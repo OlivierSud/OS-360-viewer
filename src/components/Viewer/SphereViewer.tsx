@@ -296,21 +296,27 @@ const SphereViewer: React.FC = () => {
       });
 
     // Keep the PSV navbar always visible (it is hidden by default and only
-    // revealed on tap). Force it open so mobile users always see the controls.
-    try {
-      const navbar = containerRef.current?.querySelector('.psv-navbar') as HTMLElement | null;
-      if (navbar) {
-        navbar.classList.add('psv-navbar--open');
-        navbar.style.bottom = '0';
-        navbar.style.display = 'flex';
-      }
-    } catch { /* ignore */ }
+    // revealed on tap). Re-apply on every scene load so it never gets hidden.
+    const showNavbar = () => {
+      try {
+        const navbar = containerRef.current?.querySelector('.psv-navbar') as HTMLElement | null;
+        if (navbar) {
+          navbar.classList.add('psv-navbar--open');
+          navbar.style.bottom = '0';
+          navbar.style.display = 'flex';
+        }
+      } catch { /* ignore */ }
+    };
 
     // Signal the map that the scene finished loading (used to end the
     // path-travel animation when the destination is reached).
     viewerRef.current.addEventListener('panorama-loaded', () => {
+      showNavbar();
       setSceneLoading(false);
     });
+    showNavbar();
+    window.setTimeout(showNavbar, 100);
+    window.setTimeout(showNavbar, 600);
 
     const markersPlugin = viewerRef.current.getPlugin(MarkersPlugin) as any;
 

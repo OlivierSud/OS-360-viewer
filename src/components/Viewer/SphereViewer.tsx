@@ -328,6 +328,22 @@ const SphereViewer: React.FC = () => {
   // charging reticle fills up and triggers the marker once complete. Looking
   // away resets the charge immediately.
   React.useEffect(() => {
+    // Update the per-eye reticle charging rings (0..1) and show/hide them
+    // depending on whether a gaze target is currently held. Declared first so it
+    // can be used by the early-return cleanup below.
+    const RING_LEN = 2 * Math.PI * 28;
+    const updateReticles = (p: number, active: boolean) => {
+      const refs = vrReticleRefs.current;
+      const wraps = vrReticleWrapRef.current;
+      if (!refs || !wraps) return;
+      const offset = RING_LEN * (1 - p);
+      if (refs.left) refs.left.setAttribute('stroke-dashoffset', `${offset}`);
+      if (refs.right) refs.right.setAttribute('stroke-dashoffset', `${offset}`);
+      const disp = active ? 'block' : 'none';
+      wraps.left.style.display = disp;
+      wraps.right.style.display = disp;
+    };
+
     if (!vrActive) {
       gazeTargetRef.current = null;
       gazeProgressRef.current = 0;
@@ -356,21 +372,6 @@ const SphereViewer: React.FC = () => {
     // stereo both eyes look in the same direction, so comparing the view
     // position to each marker's yaw/pitch works for either eye.
     const CENTER_THRESHOLD = 0.14;
-
-    // Update the per-eye reticle charging rings (0..1) and show/hide them
-    // depending on whether a gaze target is currently held.
-    const RING_LEN = 2 * Math.PI * 28;
-    const updateReticles = (p: number, active: boolean) => {
-      const refs = vrReticleRefs.current;
-      const wraps = vrReticleWrapRef.current;
-      if (!refs || !wraps) return;
-      const offset = RING_LEN * (1 - p);
-      if (refs.left) refs.left.setAttribute('stroke-dashoffset', `${offset}`);
-      if (refs.right) refs.right.setAttribute('stroke-dashoffset', `${offset}`);
-      const disp = active ? 'block' : 'none';
-      wraps.left.style.display = disp;
-      wraps.right.style.display = disp;
-    };
 
     const angleDiff = (a: number, b: number) => {
       let d = a - b;
@@ -1026,7 +1027,9 @@ const SphereViewer: React.FC = () => {
       currentIsVideoRef.current = isVideo;
       setViewerEpoch((e) => e + 1);
       vrEnabledRef.current = vrEnabled;
-      setVrActive(false);
+      // Keep the VR interface active across the rebuild: the VR DOM layer is torn
+      // down and rebuilt via viewerEpoch (no React portal involved, so no crash),
+      // and the stereo plugin stays enabled — the user remains in VR.
       return;
     }
 
@@ -1059,6 +1062,11 @@ const SphereViewer: React.FC = () => {
       // zoomed-in level so the next view stays advanced (no zoom-out),
       // then (re)start the appropriate audio track for this viewpoint.
       playSceneAudio();
+      // setPanorama rebuilt PSV's DOM inside the container, wiping our VR layer
+      // (which is plain DOM, not React). Bump the epoch so the VR layer effect
+      // tears down the stale node and rebuilds a fresh one — without ever
+      // crashing React (no portal involved).
+      setViewerEpoch((e) => e + 1);
     };
 
     // Give the zoom-in animation a brief moment before swapping the panorama.

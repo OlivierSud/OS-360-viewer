@@ -228,7 +228,17 @@ const SphereViewer: React.FC = () => {
     let raf = 0;
     let lastTs = 0;
     const GAZE_DURATION = 1500; // ms to fully charge
-    const CENTER_THRESHOLD = 70; // px tolerance around the left-eye centre
+    // Angular tolerance (radians) around the centre of the current view. In
+    // stereo both eyes look in the same direction, so comparing the view
+    // position to each marker's yaw/pitch works for either eye.
+    const CENTER_THRESHOLD = 0.14;
+
+    const angleDiff = (a: number, b: number) => {
+      let d = a - b;
+      while (d > Math.PI) d -= 2 * Math.PI;
+      while (d < -Math.PI) d += 2 * Math.PI;
+      return d;
+    };
 
     const tick = (ts: number) => {
       raf = requestAnimationFrame(tick);
@@ -236,15 +246,10 @@ const SphereViewer: React.FC = () => {
       lastTs = ts;
       const v = viewerRef.current;
       const markersPlugin = v?.getPlugin(MarkersPlugin) as any;
-      const container = containerRef.current;
-      if (!v || !markersPlugin || !container) return;
+      if (!v || !markersPlugin) return;
 
-      const cw = container.clientWidth;
-      const ch = container.clientHeight;
-      // In stereo mode the screen is split in two; the left eye centre is at
-      // a quarter of the width (not half).
-      const cx = cw / 4;
-      const cy = ch / 2;
+      const view = v.getPosition?.() as { yaw: number; pitch: number } | undefined;
+      if (!view) return;
 
       let best: { id: string; data: any; dist: number } | null = null;
       try {
@@ -252,8 +257,9 @@ const SphereViewer: React.FC = () => {
         for (const m of markers) {
           const pos = m.position;
           if (!pos || typeof pos.yaw !== 'number' || typeof pos.pitch !== 'number') continue;
-          const screen = v.dataHelper.sphericalCoordsToViewerCoords(pos);
-          const dist = Math.hypot(screen.x - cx, screen.y - cy);
+          const dyaw = angleDiff(view.yaw, pos.yaw);
+          const dpitch = view.pitch - pos.pitch;
+          const dist = Math.hypot(dyaw, dpitch);
           if (dist < CENTER_THRESHOLD && (!best || dist < best.dist)) {
             best = { id: m.id, data: m.data ?? {}, dist };
           }
@@ -1331,7 +1337,18 @@ const SphereViewer: React.FC = () => {
             const stereo = v.getPlugin('stereo') as any;
             if (!vrActive) {
               try { gyro?.start?.(); } catch { /* permission may be required */ }
-              try { stereo?.start?.(); } catch { /* ignore */ }
+              // StereoPlugin hides markers/navbar/panel on start; re-show markers
+              // so hotspots & path arrows remain visible (and gaze can target them).
+              const markersPlugin = v.getPlugin('markers') as any;
+              const showMarkers = () => { try { markersPlugin?.showAllMarkers?.(); } catch { /* ignore */ } };
+              try {
+                const p = stereo?.start?.();
+                if (p && typeof p.then === 'function') {
+                  p.then(showMarkers).catch(() => {});
+                } else {
+                  showMarkers();
+                }
+              } catch { /* ignore */ }
               if (document.documentElement.requestFullscreen) {
                 document.documentElement.requestFullscreen().catch(() => {});
               }

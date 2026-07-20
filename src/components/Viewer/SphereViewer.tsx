@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Viewer } from '@photo-sphere-viewer/core';
 import '@photo-sphere-viewer/core/index.css';
 import { MarkersPlugin } from '@photo-sphere-viewer/markers-plugin';
@@ -31,6 +32,10 @@ const SphereViewer: React.FC = () => {
   const vrOverlayRef = useRef<HTMLDivElement | null>(null);
   const vrMarkerElsRef = useRef<Map<string, { left: HTMLDivElement; right: HTMLDivElement }>>(new Map());
   const vrPollTimerRef = useRef<number | undefined>(undefined);
+  // The PSV container is the element PSV fullscreens in VR. Our VR overlay and
+  // reticles must live INSIDE it (via a portal) so they remain visible while
+  // the container is in fullscreen — siblings outside it would be clipped away.
+  const [vrPortalEl, setVrPortalEl] = useState<HTMLElement | null>(null);
   const addHotspotCursor = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Ctext x='16' y='22' text-anchor='middle' font-size='22'%3E%E2%AD%95%3C/text%3E%3C/svg%3E") 16 16, crosshair`;
 
   // Same pill button style as the map editor controls (Add 360 / Move)
@@ -151,6 +156,12 @@ const SphereViewer: React.FC = () => {
     const onChange = () => setIsMobile(mq.matches);
     mq.addEventListener('change', onChange);
     return () => mq.removeEventListener('change', onChange);
+  }, []);
+
+  // Capture the PSV container element so our VR overlay/reticles can be portaled
+  // inside it (required for them to stay visible during PSV fullscreen).
+  React.useEffect(() => {
+    setVrPortalEl(containerRef.current);
   }, []);
 
   // Whether an audio track is available for the current viewpoint (its own or
@@ -1235,60 +1246,60 @@ const SphereViewer: React.FC = () => {
         }}
       />
 
-      {/* VR gaze reticles: a charging ring at the centre of EACH eye. Only
-          shown in stereo/VR mode; it fills while the user looks at a marker and
-          triggers it when complete. Rendered `fixed` so it covers the full
-          viewport even when PSV enters fullscreen for stereoscopic mode. */}
-      {vrActive && [25, 75].map((pct) => (
-        <div
-          key={pct}
-          style={{
-            position: 'fixed',
-            left: `${pct}%`,
-            top: '50%',
-            transform: 'translate(-50%, -50%)',
-            zIndex: 9991,
-            pointerEvents: 'none',
-            width: '64px',
-            height: '64px',
-          }}
-        >
-          <svg width="64" height="64" viewBox="0 0 64 64">
-            <circle
-              cx="32" cy="32" r="28"
-              fill="none"
-              stroke="rgba(255,255,255,0.35)"
-              strokeWidth="4"
-            />
-            <circle
-              cx="32" cy="32" r="28"
-              fill="none"
-              stroke="#ffffff"
-              strokeWidth="4"
-              strokeLinecap="round"
-              strokeDasharray={2 * Math.PI * 28}
-              strokeDashoffset={2 * Math.PI * 28 * (1 - gazeProgress)}
-              transform="rotate(-90 32 32)"
-            />
-            <circle cx="32" cy="32" r="3" fill="rgba(255,255,255,0.85)" />
-          </svg>
-        </div>
-      ))}
-
-      {/* VR per-eye marker overlays: each PSV marker is drawn twice (left eye /
-          right eye) so it stays correctly placed in the stereo view. Rendered
-          `fixed` to cover the full viewport in stereoscopic fullscreen mode. */}
-      {vrActive && (
-        <div
-          ref={vrOverlayRef}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 9990,
-            pointerEvents: 'none',
-            overflow: 'hidden',
-          }}
-        />
+      {/* VR dedicated interface (reticles + per-eye marker overlay). Rendered
+          through a portal INSIDE the PSV container so it stays visible while PSV
+          fullscreens that container in stereoscopic mode — a sibling outside it
+          would be clipped away. Position is absolute (relative to the container,
+          which fills the screen in fullscreen). */}
+      {vrActive && vrPortalEl && createPortal(
+        <>
+          {[25, 75].map((pct) => (
+            <div
+              key={pct}
+              style={{
+                position: 'absolute',
+                left: `${pct}%`,
+                top: '50%',
+                transform: 'translate(-50%, -50%)',
+                zIndex: 9991,
+                pointerEvents: 'none',
+                width: '64px',
+                height: '64px',
+              }}
+            >
+              <svg width="64" height="64" viewBox="0 0 64 64">
+                <circle
+                  cx="32" cy="32" r="28"
+                  fill="none"
+                  stroke="rgba(255,255,255,0.35)"
+                  strokeWidth="4"
+                />
+                <circle
+                  cx="32" cy="32" r="28"
+                  fill="none"
+                  stroke="#ffffff"
+                  strokeWidth="4"
+                  strokeLinecap="round"
+                  strokeDasharray={2 * Math.PI * 28}
+                  strokeDashoffset={2 * Math.PI * 28 * (1 - gazeProgress)}
+                  transform="rotate(-90 32 32)"
+                />
+                <circle cx="32" cy="32" r="3" fill="rgba(255,255,255,0.85)" />
+              </svg>
+            </div>
+          ))}
+          <div
+            ref={vrOverlayRef}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              zIndex: 9990,
+              pointerEvents: 'none',
+              overflow: 'hidden',
+            }}
+          />
+        </>,
+        vrPortalEl
       )}
 
       {/* Hidden audio element: plays the viewpoint/project ambient track */}

@@ -34,6 +34,10 @@ const SphereViewer: React.FC = () => {
   // Per-eye "close" targeting points (✕) shown in VR when a hotspot popup is open,
   // so the user can gaze at the cross to dismiss the popup.
   const vrCloseElsRef = useRef<{ left: HTMLDivElement; right: HTMLDivElement } | null>(null);
+  // Per-eye VR hotspot popup card, anchored to the hotspot's SPHERICAL position
+  // (so it stays fixed relative to the panorama, not the camera). The close cross
+  // is drawn in the top-right corner of this card.
+  const vrPopupElsRef = useRef<{ left: HTMLDivElement; right: HTMLDivElement } | null>(null);
   const vrPollTimerRef = useRef<number | undefined>(undefined);
   // The PSV container is the element PSV fullscreens in VR. Our VR overlay and
   // reticles must live INSIDE it (via a portal) so they remain visible while
@@ -254,6 +258,11 @@ const SphereViewer: React.FC = () => {
         vrCloseElsRef.current.right.remove();
         vrCloseElsRef.current = null;
       }
+      if (vrPopupElsRef.current) {
+        vrPopupElsRef.current.left.remove();
+        vrPopupElsRef.current.right.remove();
+        vrPopupElsRef.current = null;
+      }
       return;
     }
     let raf = 0;
@@ -389,78 +398,207 @@ const SphereViewer: React.FC = () => {
         }
       }
 
-      // --- VR "close popup" targeting point (✕) ---
-      // When a hotspot popup is open in VR, draw a cross the user can gaze at to
-      // dismiss it. It is anchored to a FIXED screen position (bottom-centre of
-      // the overlay) projected back to spherical coords so it sits correctly in
-      // each eye. We keep it out of `seen` (it is not a PSV marker).
+      // --- VR hotspot popup card + close cross (✕) ---
+      // When a hotspot popup is open in VR, render a card ANCHORED to the
+      // hotspot's SPHERICAL position (so it stays fixed relative to the
+      // panorama, exactly like the normal interface marker) — NOT fixed to the
+      // camera. The close cross sits in the top-right corner of the card and is
+      // also a gaze target so the user can dismiss the popup by looking at it.
       const openId = openHotspotIdRef.current;
-      // Spherical position of the VR "close popup" cross (recomputed each frame;
-      // declared here so it is also visible to the gaze-target selection below).
+      // Spherical position of the close cross (top-right of the card), recomputed
+      // each frame. Declared here so the gaze-target selection below can see it.
       let closePos: any = null;
       if (openId) {
-        const closeScreenX = Wov / 2;
-        const closeScreenY = Hov * 0.80;
-        try {
-          closePos = v.dataHelper.viewerCoordsToSphericalCoords({ x: closeScreenX, y: closeScreenY });
-        } catch { closePos = null; }
-        if (!vrCloseElsRef.current) {
-          const makeClose = () => {
-            const el = document.createElement('div');
-            el.style.position = 'absolute';
-            el.style.transform = 'translate(-50%, -50%)';
-            el.style.pointerEvents = 'none';
-            el.style.display = 'none';
-            el.style.alignItems = 'center';
-            el.style.justifyContent = 'center';
-            el.style.width = '46px';
-            el.style.height = '46px';
-            el.style.borderRadius = '50%';
-            el.style.border = '3px solid #ff5252';
-            el.style.background = 'rgba(0,0,0,0.55)';
-            el.style.color = '#ff5252';
-            el.style.fontSize = '24px';
-            el.style.fontWeight = '700';
-            el.style.zIndex = '1360';
-            el.style.boxShadow = '0 0 12px rgba(0,0,0,0.7)';
-            overlay.appendChild(el);
-            return el;
-          };
-          vrCloseElsRef.current = { left: makeClose(), right: makeClose() };
+        // Find the open hotspot's spherical position (reuse its PSV marker so we
+        // match the exact anchor used by the normal interface).
+        const hsMarker = markers.find((m: any) => m?.data?.hotspotId === openId);
+        let hsPos: any = hsMarker ? getMarkerPos(hsMarker) : null;
+        if (!hsPos || typeof hsPos.yaw !== 'number') {
+          // Fall back to the store's hotspot coordinates.
+          const st = useProjectStore.getState();
+          const sc = st.scenes.find((s: any) => s.id === st.selectedSceneId);
+          const hp = sc?.hotspots?.find((h: any) => h.id === openId);
+          if (hp) hsPos = { yaw: hp.yaw, pitch: hp.pitch } as any;
         }
-        const closeEls = vrCloseElsRef.current;
-        if (closePos && typeof closePos.yaw === 'number') {
-          const screenC = v.dataHelper.sphericalCoordsToViewerCoords(closePos);
-          if (screenC && Number.isFinite(screenC.x) && Number.isFinite(screenC.y)) {
-            const fxc = screenC.x / Wsrc;
-            const fyc = screenC.y / Hsrc;
-            const leftXc = (fxc - 0.25) * Wov;
-            const rightXc = (fxc + 0.25) * Wov;
-            const yc = fyc * Hov;
-            let visibleC = true;
-            try { visibleC = Boolean(v.dataHelper.isPointVisible(closePos)); } catch { visibleC = true; }
-            const leftVisC = visibleC && leftXc >= 0 && leftXc <= halfW;
-            const rightVisC = visibleC && rightXc >= halfW && rightXc <= Wov;
-            closeEls.left.textContent = '✕';
-            closeEls.right.textContent = '✕';
-            closeEls.left.style.left = `${leftXc}px`;
-            closeEls.left.style.top = `${yc}px`;
-            closeEls.right.style.left = `${rightXc}px`;
-            closeEls.right.style.top = `${yc}px`;
-            closeEls.left.style.display = leftVisC ? 'flex' : 'none';
-            closeEls.right.style.display = rightVisC ? 'flex' : 'none';
+        if (hsPos && typeof hsPos.yaw === 'number') {
+          // Build the card HTML once (when the open hotspot changes).
+          if (!vrPopupElsRef.current || vrPopupElsRef.current.left.dataset.hid !== openId) {
+            const st = useProjectStore.getState();
+            const sc = st.scenes.find((s: any) => s.id === st.selectedSceneId);
+            const hs = sc?.hotspots?.find((h: any) => h.id === openId);
+            const makeCard = () => {
+              const el = document.createElement('div');
+              el.style.position = 'absolute';
+              el.style.transform = 'translate(-50%, -100%)';
+              el.style.pointerEvents = 'none';
+              el.style.display = 'none';
+              el.style.width = 'min(240px, 72vw)';
+              el.style.maxHeight = '52vh';
+              el.style.overflow = 'auto';
+              el.style.background = 'rgba(14,14,16,0.92)';
+              el.style.backdropFilter = 'blur(12px)';
+              (el.style as any).WebkitBackdropFilter = 'blur(12px)';
+              el.style.border = '1px solid rgba(255,255,255,0.12)';
+              el.style.borderRadius = '12px';
+              el.style.padding = '12px 14px';
+              el.style.color = 'white';
+              el.style.zIndex = '1355';
+              el.style.fontFamily = 'system-ui, sans-serif';
+              el.style.display = 'flex';
+              el.style.flexDirection = 'column';
+              el.style.gap = '8px';
+              el.style.boxShadow = '0 8px 28px rgba(0,0,0,0.65)';
+              overlay.appendChild(el);
+              return el;
+            };
+            if (!vrPopupElsRef.current) {
+              vrPopupElsRef.current = { left: makeCard(), right: makeCard() };
+            }
+            const buildHtml = (h: any) => {
+              const isImage = h.type === 'image' && h.content;
+              const isVideo = h.type === 'video';
+              const safe = h.content
+                ? String(h.content).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                : '';
+              const title = h.title
+                ? h.title
+                : (isVideo ? '🎥 Vidéo' : isImage ? '🖼️ Image' : 'ℹ️ Info');
+              const content = isImage
+                ? `<img src="${h.content}" alt="" style="width:100%;max-height:180px;object-fit:contain;border-radius:6px;background:#111;display:block;" />`
+                : (h.content
+                  ? `<p style="margin:0;font-size:0.85rem;line-height:1.5;white-space:pre-wrap;color:#ddd;">${safe}</p>`
+                  : `<p style="margin:0;font-size:0.8rem;color:#888;font-style:italic;">Aucun contenu configuré.</p>`);
+              return `
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+                  <span style="font-size:0.92rem;font-weight:600;">${title}</span>
+                  <span class="vr-close-x" style="flex-shrink:0;width:26px;height:26px;border-radius:50%;border:2px solid #ff5252;color:#ff5252;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;line-height:1;">✕</span>
+                </div>
+                ${content}`;
+            };
+            if (hs) {
+              const html = buildHtml(hs);
+              vrPopupElsRef.current.left.innerHTML = html;
+              vrPopupElsRef.current.right.innerHTML = html;
+              vrPopupElsRef.current.left.dataset.hid = openId;
+              vrPopupElsRef.current.right.dataset.hid = openId;
+            }
+          }
+          // Project the card anchor (the hotspot point) into each eye.
+          const screenH = v.dataHelper.sphericalCoordsToViewerCoords(hsPos);
+          if (screenH && Number.isFinite(screenH.x) && Number.isFinite(screenH.y)) {
+            const fxh = screenH.x / Wsrc;
+            const fyh = screenH.y / Hsrc;
+            const leftXh = (fxh - 0.25) * Wov;
+            const rightXh = (fxh + 0.25) * Wov;
+            const yh = fyh * Hov;
+            let visH = true;
+            try { visH = Boolean(v.dataHelper.isPointVisible(hsPos)); } catch { visH = true; }
+            const leftVisH = visH && leftXh >= 0 && leftXh <= halfW;
+            const rightVisH = visH && rightXh >= halfW && rightXh <= Wov;
+            const cards = vrPopupElsRef.current;
+            cards.left.style.left = `${leftXh}px`;
+            cards.left.style.top = `${yh}px`;
+            cards.right.style.left = `${rightXh}px`;
+            cards.right.style.top = `${yh}px`;
+            cards.left.style.display = leftVisH ? 'flex' : 'none';
+            cards.right.style.display = rightVisH ? 'flex' : 'none';
+
+            // Close cross position: top-right of the card. The card is anchored
+            // with translate(-50%,-100%) at (anchorX, anchorY), so its top-right
+            // corner is roughly at anchor + (+W/2, -H). Measure the rendered card.
+            const cardW = (cards.left.offsetWidth || 220);
+            const cardH = (cards.left.offsetHeight || 120);
+            const closeXEye = leftXh + cardW / 2 - 16;
+            const closeYEye = yh - cardH + 16;
+            // Convert overlay pixel coords back to PSV source coords for the
+            // spherical projection used by the gaze loop.
+            const closeXSrc = (closeXEye / Wov) * Wsrc;
+            const closeYSrc = (closeYEye / Hov) * Hsrc;
+            try {
+              closePos = v.dataHelper.viewerCoordsToSphericalCoords({ x: closeXSrc, y: closeYSrc });
+            } catch { closePos = null; }
+
+            // Draw the red gaze targeting ring on top of the close cross.
+            if (!vrCloseElsRef.current) {
+              const makeClose = () => {
+                const el = document.createElement('div');
+                el.style.position = 'absolute';
+                el.style.transform = 'translate(-50%, -50%)';
+                el.style.pointerEvents = 'none';
+                el.style.display = 'none';
+                el.style.alignItems = 'center';
+                el.style.justifyContent = 'center';
+                el.style.width = '44px';
+                el.style.height = '44px';
+                el.style.borderRadius = '50%';
+                el.style.border = '3px solid #ff5252';
+                el.style.background = 'rgba(0,0,0,0.45)';
+                el.style.color = '#ff5252';
+                el.style.fontSize = '22px';
+                el.style.fontWeight = '700';
+                el.style.zIndex = '1360';
+                el.style.boxShadow = '0 0 12px rgba(0,0,0,0.7)';
+                overlay.appendChild(el);
+                return el;
+              };
+              vrCloseElsRef.current = { left: makeClose(), right: makeClose() };
+            }
+            const closeEls = vrCloseElsRef.current;
+            if (closePos && typeof closePos.yaw === 'number') {
+              const screenC = v.dataHelper.sphericalCoordsToViewerCoords(closePos);
+              if (screenC && Number.isFinite(screenC.x) && Number.isFinite(screenC.y)) {
+                const fxc = screenC.x / Wsrc;
+                const fyc = screenC.y / Hsrc;
+                const leftXc = (fxc - 0.25) * Wov;
+                const rightXc = (fxc + 0.25) * Wov;
+                const yc = fyc * Hov;
+                let visibleC = true;
+                try { visibleC = Boolean(v.dataHelper.isPointVisible(closePos)); } catch { visibleC = true; }
+                closeEls.left.textContent = '✕';
+                closeEls.right.textContent = '✕';
+                closeEls.left.style.left = `${leftXc}px`;
+                closeEls.left.style.top = `${yc}px`;
+                closeEls.right.style.left = `${rightXc}px`;
+                closeEls.right.style.top = `${yc}px`;
+                closeEls.left.style.display = (visibleC && leftXc >= 0 && leftXc <= halfW) ? 'flex' : 'none';
+                closeEls.right.style.display = (visibleC && rightXc >= halfW && rightXc <= Wov) ? 'flex' : 'none';
+              } else {
+                closeEls.left.style.display = 'none';
+                closeEls.right.style.display = 'none';
+              }
+            } else {
+              closeEls.left.style.display = 'none';
+              closeEls.right.style.display = 'none';
+            }
           } else {
-            closeEls.left.style.display = 'none';
-            closeEls.right.style.display = 'none';
+            vrPopupElsRef.current.left.style.display = 'none';
+            vrPopupElsRef.current.right.style.display = 'none';
+            if (vrCloseElsRef.current) {
+              vrCloseElsRef.current.left.style.display = 'none';
+              vrCloseElsRef.current.right.style.display = 'none';
+            }
           }
         } else {
-          closeEls.left.style.display = 'none';
-          closeEls.right.style.display = 'none';
+          if (vrPopupElsRef.current) {
+            vrPopupElsRef.current.left.style.display = 'none';
+            vrPopupElsRef.current.right.style.display = 'none';
+          }
+          if (vrCloseElsRef.current) {
+            vrCloseElsRef.current.left.style.display = 'none';
+            vrCloseElsRef.current.right.style.display = 'none';
+          }
         }
-      } else if (vrCloseElsRef.current) {
-        vrCloseElsRef.current.left.remove();
-        vrCloseElsRef.current.right.remove();
-        vrCloseElsRef.current = null;
+      } else {
+        if (vrPopupElsRef.current) {
+          vrPopupElsRef.current.left.remove();
+          vrPopupElsRef.current.right.remove();
+          vrPopupElsRef.current = null;
+        }
+        if (vrCloseElsRef.current) {
+          vrCloseElsRef.current.left.remove();
+          vrCloseElsRef.current.right.remove();
+          vrCloseElsRef.current = null;
+        }
       }
 
       let best: { id: string; data: any; dist: number } | null = null;
@@ -1412,63 +1550,6 @@ const SphereViewer: React.FC = () => {
               overflow: 'hidden',
             }}
           />
-
-          {/* VR hotspot popup: the PSV marker popup is hidden by the stereo
-              plugin in VR, so we render our own read-only card here. The close
-              action is performed by the ✕ targeting point (handled in the gaze
-              loop), not by a click — hence pointerEvents:none. */}
-          {openHotspotId && vrActive && (() => {
-            const hs = selectedScene?.hotspots?.find((h) => h.id === openHotspotId);
-            if (!hs) return null;
-            const isImage = hs.type === 'image' && hs.content;
-            const isVideo = hs.type === 'video';
-            const safe = hs.content
-              ? hs.content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-              : '';
-            const title = hs.title
-              ? hs.title
-              : (isVideo ? '🎥 Vidéo' : isImage ? '🖼️ Image' : 'ℹ️ Info');
-            return (
-              <div
-                style={{
-                  position: 'absolute',
-                  left: '50%',
-                  top: '40%',
-                  transform: 'translate(-50%, -50%)',
-                  width: 'min(320px, 80vw)',
-                  maxHeight: '58vh',
-                  overflow: 'auto',
-                  background: 'rgba(14,14,16,0.92)',
-                  backdropFilter: 'blur(12px)',
-                  WebkitBackdropFilter: 'blur(12px)',
-                  border: '1px solid rgba(255,255,255,0.12)',
-                  borderRadius: '12px',
-                  padding: '12px 14px',
-                  color: 'white',
-                  zIndex: 1358,
-                  pointerEvents: 'none',
-                  fontFamily: 'system-ui, sans-serif',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '8px',
-                  boxShadow: '0 8px 28px rgba(0,0,0,0.65)',
-                }}
-              >
-                <div style={{ fontSize: '0.95rem', fontWeight: 600 }}>{title}</div>
-                {isImage ? (
-                  <img
-                    src={hs.content}
-                    alt=""
-                    style={{ width: '100%', maxHeight: '200px', objectFit: 'contain', borderRadius: '6px', background: '#111', display: 'block' }}
-                  />
-                ) : hs.content ? (
-                  <p style={{ margin: 0, fontSize: '0.88rem', lineHeight: 1.55, whiteSpace: 'pre-wrap', color: '#ddd' }}>{safe}</p>
-                ) : (
-                  <p style={{ margin: 0, fontSize: '0.82rem', color: '#888', fontStyle: 'italic' }}>Aucun contenu configuré.</p>
-                )}
-              </div>
-            );
-          })()}
         </>,
         vrPortalEl
       )}

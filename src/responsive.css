@@ -262,6 +262,14 @@
     z-index: 2100 !important;
   }
 
+  /* Viewer control bar (PSV navbar) must stay visible on mobile landscape */
+  .psv-navbar,
+  .viewer-controls {
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+  }
+
   /* Project selection screen */
   .selection-screen {
     padding: 16px;
@@ -291,15 +299,14 @@
   }
 }
 
-/* Landscape phones/tablets: the system navigation bar sits on the side, so the
-   bottom-right corner is hidden. Move the VR button to the bottom-left and keep
-   it clear of the circular minimap (top-right). Covers real phone landscape
+/* Landscape phones/tablets: keep the VR button bottom-right, just above the
+   viewer control bar (which is also kept visible). Covers real phone landscape
    widths, which exceed 768px. */
 @media (orientation: landscape) and (max-height: 560px) {
   .viewer-vr-button {
-    right: auto !important;
-    left: 15px !important;
-    bottom: 15px !important;
+    right: 15px !important;
+    left: auto !important;
+    bottom: 80px !important;
     top: auto !important;
     width: 52px !important;
     height: 52px !important;

@@ -137,13 +137,13 @@ const SphereViewer: React.FC = () => {
 
   // VR button is only relevant on mobile devices (where a cardboard/gyroscope
   // experience makes sense). Detect once and keep it in sync with viewport.
+  const isMobileQuery = '(max-width: 768px), (pointer: coarse), (hover: none), (orientation: landscape) and (max-height: 560px)';
   const [isMobile, setIsMobile] = useState<boolean>(
-    typeof window !== 'undefined' &&
-      window.matchMedia('(max-width: 768px), (pointer: coarse)').matches
+    typeof window !== 'undefined' && window.matchMedia(isMobileQuery).matches
   );
   React.useEffect(() => {
     if (typeof window === 'undefined') return;
-    const mq = window.matchMedia('(max-width: 768px), (pointer: coarse)');
+    const mq = window.matchMedia(isMobileQuery);
     const onChange = () => setIsMobile(mq.matches);
     mq.addEventListener('change', onChange);
     return () => mq.removeEventListener('change', onChange);
@@ -248,6 +248,7 @@ const SphereViewer: React.FC = () => {
         container: containerRef.current,
         panorama: getPanorama(selectedScene),
         plugins,
+        navbar: true,
         ...(isCurrentVideo
           ? { adapter: [EquirectangularVideoAdapter, { muted: false, autoplay: true }] }
           : {}),

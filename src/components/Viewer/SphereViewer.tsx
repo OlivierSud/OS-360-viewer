@@ -261,12 +261,24 @@ const SphereViewer: React.FC = () => {
       if (!view) return;
 
       // In stereo the panorama is rendered twice, each eye filling one half of
-      // the (full-screen) viewport. Use the viewport width (not the container,
+      // the (full-screen) viewport. Use the viewport size (not the container,
       // which can report 0 in fullscreen) so the per-eye split is correct.
       const cw = window.innerWidth || container.clientWidth || 1;
-      // A marker at full-canvas-x x is shown at x/2 in the left eye and at
-      // cw/2 + x/2 in the right eye (same y) — i.e. centred in each half.
-      const halfW = cw / 2;
+      const ch = window.innerHeight || container.clientHeight || 1;
+
+      // Per-eye projection. Each eye shows the SAME horizontal/vertical FOV as
+      // the mono camera, compressed into half the width. So a marker at angular
+      // offset (dyaw, dpitch) from the view centre lands at:
+      //   eyeX = eyeCenterX + (cw/4) * (dyaw / (hFov/2))
+      //   eyeY = ch/2        - (ch/2) * (dpitch / (vFov/2))
+      // with eyeCenterX = cw/4 (left eye) or 3cw/4 (right eye).
+      const st: any = (v as any).state ?? {};
+      const hFov = typeof st.hFov === 'number' ? st.hFov : Math.PI / 2;
+      const vFov = typeof st.vFov === 'number' ? st.vFov : Math.PI / 2;
+      const halfHFov = hFov / 2 || 1;
+      const halfVFov = vFov / 2 || 1;
+      const eyeCenterL = cw / 4;
+      const eyeCenterR = (3 * cw) / 4;
 
       let markers: any[] = [];
       try {
@@ -281,8 +293,23 @@ const SphereViewer: React.FC = () => {
         // Only draw markers that are actually in front of the current view.
         let visible = true;
         try { visible = Boolean(v.dataHelper.isPointVisible(pos)); } catch { visible = true; }
-        const screen = v.dataHelper.sphericalCoordsToViewerCoords(pos);
-        if (!screen || typeof screen.x !== 'number' || typeof screen.y !== 'number') continue;
+        if (!visible) {
+          const existing = vrMarkerElsRef.current.get(m.id);
+          if (existing) {
+            existing.left.style.display = 'none';
+            existing.right.style.display = 'none';
+          }
+          seen.add(m.id);
+          continue;
+        }
+        const dyaw = angleDiff(pos.yaw, view.yaw);
+        const dpitch = pos.pitch - view.pitch;
+        const xOff = (cw / 4) * (dyaw / halfHFov);
+        const yOff = (ch / 2) * (dpitch / halfVFov);
+        const leftX = eyeCenterL + xOff;
+        const rightX = eyeCenterR + xOff;
+        const y = ch / 2 - yOff;
+        if (!Number.isFinite(leftX) || !Number.isFinite(y)) continue;
         seen.add(m.id);
         let pair = vrMarkerElsRef.current.get(m.id);
         if (!pair) {
@@ -313,12 +340,12 @@ const SphereViewer: React.FC = () => {
         const glyph = isLink ? '➤' : '◆';
         pair.left.textContent = glyph;
         pair.right.textContent = glyph;
-        pair.left.style.left = `${screen.x / 2}px`;
-        pair.left.style.top = `${screen.y}px`;
-        pair.right.style.left = `${halfW + screen.x / 2}px`;
-        pair.right.style.top = `${screen.y}px`;
-        pair.left.style.display = visible ? 'flex' : 'none';
-        pair.right.style.display = visible ? 'flex' : 'none';
+        pair.left.style.left = `${leftX}px`;
+        pair.left.style.top = `${y}px`;
+        pair.right.style.left = `${rightX}px`;
+        pair.right.style.top = `${y}px`;
+        pair.left.style.display = 'flex';
+        pair.right.style.display = 'flex';
       }
       // Remove overlays whose marker disappeared.
       for (const [id, pair] of vrMarkerElsRef.current) {

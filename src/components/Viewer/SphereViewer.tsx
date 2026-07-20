@@ -192,7 +192,112 @@ const SphereViewer: React.FC = () => {
   const [fullscreenVideoUrl, setFullscreenVideoUrl] = useState<string | null>(null);
   const [vrActive, setVrActive] = useState(false);
 
-  // Scene transition state: freeze current view + zoom-in, load next panorama
+  // Gaze interaction (VR / stereo mode only): a reticle at the centre of the
+  // left eye fills up while the user keeps looking at a marker; once full it
+  // triggers the same action as a click.
+  const [gazeProgress, setGazeProgress] = useState(0);
+  const gazeTargetRef = useRef<string | null>(null);
+  const gazeProgressRef = useRef(0);
+
+  // Same behaviour as clicking a marker (link navigation or hotspot popup).
+  const triggerMarker = (data: { target?: string; hotspotId?: string }) => {
+    if (data.target) {
+      useProjectStore.getState().selectScene(data.target);
+    } else if (data.hotspotId) {
+      const state = useProjectStore.getState();
+      if (state.isDeletingHotspot) {
+        if (state.selectedSceneId) state.removeHotspot(state.selectedSceneId, data.hotspotId);
+        return;
+      }
+      state.selectHotspot(data.hotspotId);
+      setOpenHotspotId(data.hotspotId);
+    }
+  };
+
+  // Gaze interaction loop: only active in VR/stereo mode. Each frame we look for
+  // the marker closest to the centre of the LEFT eye; if one stays centred, a
+  // charging reticle fills up and triggers the marker once complete. Looking
+  // away resets the charge immediately.
+  React.useEffect(() => {
+    if (!vrActive) {
+      gazeTargetRef.current = null;
+      gazeProgressRef.current = 0;
+      setGazeProgress(0);
+      return;
+    }
+    let raf = 0;
+    let lastTs = 0;
+    const GAZE_DURATION = 1500; // ms to fully charge
+    const CENTER_THRESHOLD = 70; // px tolerance around the left-eye centre
+
+    const tick = (ts: number) => {
+      raf = requestAnimationFrame(tick);
+      const dt = lastTs ? ts - lastTs : 16;
+      lastTs = ts;
+      const v = viewerRef.current;
+      const markersPlugin = v?.getPlugin(MarkersPlugin) as any;
+      const container = containerRef.current;
+      if (!v || !markersPlugin || !container) return;
+
+      const cw = container.clientWidth;
+      const ch = container.clientHeight;
+      // In stereo mode the screen is split in two; the left eye centre is at
+      // a quarter of the width (not half).
+      const cx = cw / 4;
+      const cy = ch / 2;
+
+      let best: { id: string; data: any; dist: number } | null = null;
+      try {
+        const markers = markersPlugin.getMarkers?.() ?? [];
+        for (const m of markers) {
+          const pos = m.position;
+          if (!pos || typeof pos.yaw !== 'number' || typeof pos.pitch !== 'number') continue;
+          const screen = v.dataHelper.sphericalCoordsToViewerCoords(pos);
+          const dist = Math.hypot(screen.x - cx, screen.y - cy);
+          if (dist < CENTER_THRESHOLD && (!best || dist < best.dist)) {
+            best = { id: m.id, data: m.data ?? {}, dist };
+          }
+        }
+      } catch { /* ignore */ }
+
+      const currentTarget = gazeTargetRef.current;
+      const currentProgress = gazeProgressRef.current;
+
+      if (!best) {
+        // Looked away: reset immediately.
+        if (currentTarget !== null || currentProgress !== 0) {
+          gazeTargetRef.current = null;
+          gazeProgressRef.current = 0;
+          setGazeProgress(0);
+        }
+        return;
+      }
+
+      if (best.id !== currentTarget) {
+        gazeTargetRef.current = best.id;
+        gazeProgressRef.current = 0;
+        setGazeProgress(0);
+        return;
+      }
+
+      // Same target kept centred: charge.
+      const next = Math.min(1, currentProgress + dt / GAZE_DURATION);
+      gazeProgressRef.current = next;
+      setGazeProgress(next);
+      if (next >= 1) {
+        const data = best.data;
+        gazeTargetRef.current = null;
+        gazeProgressRef.current = 0;
+        setGazeProgress(0);
+        triggerMarker(data);
+      }
+    };
+
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [vrActive]);
+
+
   // in the background, then reveal it directly once ready.
   const [isTransitioning, setIsTransitioning] = useState(false);
   const transitionInProgress = useRef(false);
@@ -369,18 +474,7 @@ const SphereViewer: React.FC = () => {
 
     // Marker click (links + hotspots) — robust, doesn't depend on window globals
     markersPlugin.addEventListener('select-marker', (e: any) => {
-      const data = e.marker?.data ?? {};
-      if (data.target) {
-        useProjectStore.getState().selectScene(data.target);
-      } else if (data.hotspotId) {
-        const state = useProjectStore.getState();
-        if (state.isDeletingHotspot) {
-          if (state.selectedSceneId) state.removeHotspot(state.selectedSceneId, data.hotspotId);
-          return;
-        }
-        state.selectHotspot(data.hotspotId);
-        setOpenHotspotId(data.hotspotId);
-      }
+      triggerMarker(e.marker?.data ?? {});
     });
 
     // Start audio for the initial viewpoint once the viewer is ready.
@@ -1003,6 +1097,44 @@ const SphereViewer: React.FC = () => {
           filter: isTransitioning ? 'brightness(0.7)' : 'brightness(1)',
         }}
       />
+
+      {/* VR gaze reticle: a charging ring at the centre of the LEFT eye. Only
+          shown in stereo/VR mode; it fills while the user looks at a marker and
+          triggers it when complete. */}
+      {vrActive && (
+        <div
+          style={{
+            position: 'absolute',
+            left: '25%',
+            top: '50%',
+            transform: 'translate(-50%, -50%)',
+            zIndex: 1400,
+            pointerEvents: 'none',
+            width: '64px',
+            height: '64px',
+          }}
+        >
+          <svg width="64" height="64" viewBox="0 0 64 64">
+            <circle
+              cx="32" cy="32" r="28"
+              fill="none"
+              stroke="rgba(255,255,255,0.35)"
+              strokeWidth="4"
+            />
+            <circle
+              cx="32" cy="32" r="28"
+              fill="none"
+              stroke="#ffffff"
+              strokeWidth="4"
+              strokeLinecap="round"
+              strokeDasharray={2 * Math.PI * 28}
+              strokeDashoffset={2 * Math.PI * 28 * (1 - gazeProgress)}
+              transform="rotate(-90 32 32)"
+            />
+            <circle cx="32" cy="32" r="3" fill="rgba(255,255,255,0.85)" />
+          </svg>
+        </div>
+      )}
 
       {/* Hidden audio element: plays the viewpoint/project ambient track */}
       <audio ref={audioRef} style={{ display: 'none' }} />

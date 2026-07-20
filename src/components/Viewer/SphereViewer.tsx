@@ -260,10 +260,12 @@ const SphereViewer: React.FC = () => {
       const view = v.getPosition?.() as { yaw: number; pitch: number } | undefined;
       if (!view) return;
 
-      const cw = container.clientWidth;
-      // In stereo the canvas is rendered twice (left eye on the left half,
-      // right eye on the right half). A marker at canvas-x x appears at x/2 in
-      // the left eye and at cw/2 + x/2 in the right eye (same y).
+      // In stereo the panorama is rendered twice, each eye filling one half of
+      // the (full-screen) viewport. Use the viewport width (not the container,
+      // which can report 0 in fullscreen) so the per-eye split is correct.
+      const cw = window.innerWidth || container.clientWidth || 1;
+      // A marker at full-canvas-x x is shown at x/2 in the left eye and at
+      // cw/2 + x/2 in the right eye (same y) — i.e. centred in each half.
       const halfW = cw / 2;
 
       let markers: any[] = [];

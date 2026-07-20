@@ -30,6 +30,7 @@ const SphereViewer: React.FC = () => {
   const navbarIntervalRef = useRef<number | null>(null);
   const vrOverlayRef = useRef<HTMLDivElement | null>(null);
   const vrMarkerElsRef = useRef<Map<string, { left: HTMLDivElement; right: HTMLDivElement }>>(new Map());
+  const vrPollTimerRef = useRef<number | undefined>(undefined);
   const addHotspotCursor = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Ctext x='16' y='22' text-anchor='middle' font-size='22'%3E%E2%AD%95%3C/text%3E%3C/svg%3E") 16 16, crosshair`;
 
   // Same pill button style as the map editor controls (Add 360 / Move)
@@ -534,13 +535,21 @@ const SphereViewer: React.FC = () => {
       setSceneLoading(false);
     });
 
-    // Drive the VR overlay/gaze state from the actual stereo plugin state. This
-    // ensures our reticles and per-eye markers only appear once stereo is truly
-    // enabled (after the gyroscope permission is granted), and disappear as soon
-    // as it stops — avoiding the "stuck visible" / "invisible in VR" mismatch.
-    (viewerRef.current as any).addEventListener('stereo-updated', (e: any) => {
-      setVrActive(Boolean(e?.enabled));
-    });
+    // Drive the VR overlay/gaze state from the ACTUAL stereo plugin state. The
+    // `stereo-updated` event is not reliably delivered through the viewer event
+    // bus, so we instead poll `stereo.isEnabled()` (the ground truth of whether
+    // we are really in stereoscopic VR). This guarantees our reticles and per-eye
+    // markers are visible ONLY while stereo is enabled, and hidden otherwise.
+    let vrPollTimer: number | undefined;
+    const syncVr = () => {
+      const stereo = viewerRef.current?.getPlugin('stereo') as any;
+      const enabled = Boolean(stereo?.isEnabled?.());
+      setVrActive((prev) => (prev === enabled ? prev : enabled));
+    };
+    syncVr();
+    vrPollTimer = window.setInterval(syncVr, 150);
+    vrPollTimerRef.current = vrPollTimer;
+
     showNavbar();
     const navbarInterval = window.setInterval(showNavbar, 500);
     navbarIntervalRef.current = navbarInterval;
@@ -704,12 +713,17 @@ const SphereViewer: React.FC = () => {
     }, 320);
   }, [selectedScene?.image, selectedScene?.video, vrEnabled]);
 
-  // Clean up the navbar-visibility interval when the scene effect re-runs.
+  // Clean up the navbar-visibility and VR-polling intervals when the scene
+  // effect re-runs.
   useEffect(() => {
     return () => {
       if (navbarIntervalRef.current) {
         window.clearInterval(navbarIntervalRef.current);
         navbarIntervalRef.current = null;
+      }
+      if (vrPollTimerRef.current) {
+        window.clearInterval(vrPollTimerRef.current);
+        vrPollTimerRef.current = undefined;
       }
     };
   }, [selectedScene?.image, selectedScene?.video, vrEnabled]);
@@ -1473,19 +1487,12 @@ const SphereViewer: React.FC = () => {
             const stereo = v.getPlugin('stereo') as any;
             if (!stereo) return;
             // The StereoPlugin handles gyroscope + fullscreen + stereo render.
-            // Drive `vrActive` from the returned promise (the `stereo-updated`
-            // event is unreliable through the viewer event bus, so we don't
-            // depend on it). vrActive shows our per-eye overlay + reticles.
+            // `vrActive` (and thus our per-eye overlay + reticles) is driven by
+            // the polling of `stereo.isEnabled()` — the real stereo state.
             if (!vrActive) {
-              try {
-                Promise.resolve(stereo.start?.()).then(
-                  () => setVrActive(true),
-                  () => setVrActive(false)
-                );
-              } catch { setVrActive(false); }
+              try { stereo.start?.(); } catch { /* ignore */ }
             } else {
               try { stereo.stop?.(); } catch { /* ignore */ }
-              setVrActive(false);
             }
           }}
           title={vrActive ? 'Quitter le mode VR' : 'Mode VR (casque cardboard)'}

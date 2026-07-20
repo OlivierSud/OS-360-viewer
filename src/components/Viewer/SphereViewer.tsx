@@ -1172,11 +1172,12 @@ const SphereViewer: React.FC = () => {
             }
           }}
           title={vrActive ? 'Quitter le mode VR' : 'Mode VR (casque cardboard)'}
+          className="viewer-vr-button"
           style={{
             position: 'absolute',
             bottom: '15px',
             right: '15px',
-            zIndex: 1250,
+            zIndex: 2100,
             width: '52px',
             height: '52px',
             borderRadius: '50%',

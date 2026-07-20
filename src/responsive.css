@@ -253,6 +253,15 @@
     min-height: 44px;
   }
 
+  /* VR button (mobile): keep it above the circular minimap and easy to tap */
+  .viewer-vr-button {
+    bottom: 70px !important;
+    right: 15px !important;
+    width: 56px !important;
+    height: 56px !important;
+    z-index: 2100 !important;
+  }
+
   /* Project selection screen */
   .selection-screen {
     padding: 16px;

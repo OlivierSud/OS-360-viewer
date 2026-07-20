@@ -1274,6 +1274,15 @@ const SphereViewer: React.FC = () => {
         });
       });
     }
+
+    // In VR the classic panorama navigation (blue hotspot dots / link arrows)
+    // must NEVER be visible — only our per-eye targeting overlay is. Markers are
+    // still kept in the plugin (so the gaze loop can read their positions), but
+    // hidden visually. This must run after every re-sync (e.g. when a popup is
+    // opened/closed), otherwise the native markers would reappear.
+    if (vrActiveRef.current) {
+      try { markersPlugin.hideAllMarkers(); } catch { /* ignore */ }
+    }
   }, [selectedScene?.links, selectedScene?.hotspots, scenes, openHotspotId]);
 
   useEffect(() => {

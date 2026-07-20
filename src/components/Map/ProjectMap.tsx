@@ -16,33 +16,39 @@ const circlePadding = (map: L.Map): L.Point => {
   return L.point(-pad, -pad);
 };
 
-const FitBounds: React.FC<{ bounds: L.LatLngBoundsExpression; firstFitRef: React.MutableRefObject<boolean> }> = ({ bounds, firstFitRef }) => {
+const FitBounds: React.FC<{ bounds: L.LatLngBoundsExpression; firstFitRef: React.MutableRefObject<boolean>; mode?: 'editor' | 'viewer' }> = ({ bounds, firstFitRef, mode }) => {
   const map = useMap();
   useEffect(() => {
-    const mode = useProjectStore.getState().mode;
-    // Calculate fitZoom; in the viewer minimap, use a negative padding so the
-    // plan fills the circular overlay.
-    const fitZoom = map.getBoundsZoom(bounds, false, mode === 'viewer' ? circlePadding(map) : L.point(30, 30));
-    // Allow zooming out 3 levels further than the fit zoom to see the surroundings
-    const minZoomLevel = fitZoom - 3;
-    map.setMinZoom(minZoomLevel);
-    map.setMaxZoom(Math.max(2, fitZoom + 2));
-    
-    const center = L.latLngBounds(bounds as any).getCenter();
+    // Wait until the map is laid out (so its size is known) before computing
+    // zoom levels — otherwise getBoundsZoom / circlePadding read a 0px size.
+    const apply = () => {
+      // fitZoom = zoom at which the plan exactly fills the square container.
+      const fitZoom = map.getBoundsZoom(bounds, false, L.point(30, 30));
+      // In the viewer we start well zoomed-out so the WHOLE plan (square) is
+      // comfortably visible inside the circular minimap, with margin around it.
+      // Each zoom level halves the scale, so −2 levels shows the plan clearly.
+      const startZoom = mode === 'viewer' ? fitZoom - 4 : fitZoom;
+      // Allow zooming out a couple more levels past the start view.
+      const minZoomLevel = startZoom - 2;
+      map.setMinZoom(minZoomLevel);
+      map.setMaxZoom(Math.max(2, fitZoom + 2));
 
-    if (firstFitRef.current || mode === 'editor') {
-      // First load (or editor): fit perfectly to the container bounds.
-      firstFitRef.current = false;
-      map.setView(center, fitZoom);
-    }
+      const center = L.latLngBounds(bounds as any).getCenter();
+
+      if (firstFitRef.current || mode === 'editor') {
+        firstFitRef.current = false;
+        map.setView(center, startZoom, { animate: false });
+      }
+    };
+    map.whenReady(apply);
     // In viewer mode after the first load, do NOT refit: the map is recentered
     // on the starting viewpoint by RecenterOnProjectChange when the project
     // changes (e.g. via a Portal). We only keep the zoom bounds up to date.
-  }, [map, bounds, firstFitRef]);
+  }, [map, bounds, firstFitRef, mode]);
   return null;
 };
 
-const FitGeoBounds: React.FC<{ scenes: Scene[]; firstFitRef: React.MutableRefObject<boolean> }> = ({ scenes, firstFitRef }) => {
+const FitGeoBounds: React.FC<{ scenes: Scene[]; firstFitRef: React.MutableRefObject<boolean>; mode?: 'editor' | 'viewer' }> = ({ scenes, firstFitRef, mode }) => {
   const map = useMap();
   useEffect(() => {
     if (scenes.length === 0) {
@@ -63,16 +69,17 @@ const FitGeoBounds: React.FC<{ scenes: Scene[]; firstFitRef: React.MutableRefObj
     if (minLat === maxLat && minLon === maxLon) {
       map.setMinZoom(8);
       map.setMaxZoom(17);
-      const mode = useProjectStore.getState().mode;
       if (firstFitRef.current || mode === 'editor') {
         firstFitRef.current = false;
-        map.setView([minLat, minLon], 15);
+        const z = mode === 'viewer' ? 12 : 15;
+        // Defer in viewer mode so it overrides the initial MapContainer fit.
+        if (mode === 'viewer') setTimeout(() => map.setView([minLat, minLon], z), 0);
+        else map.setView([minLat, minLon], z);
       }
       return;
     }
 
     const bounds = L.latLngBounds([minLat, minLon], [maxLat, maxLon]);
-    const mode = useProjectStore.getState().mode;
     const fitZoom = map.getBoundsZoom(bounds, false, mode === 'viewer' ? circlePadding(map) : L.point(50, 50));
     // Allow zooming out 5 levels further than the viewpoints bounds for geographic map
     const minZoomLevel = Math.max(1, fitZoom - 5);
@@ -83,9 +90,17 @@ const FitGeoBounds: React.FC<{ scenes: Scene[]; firstFitRef: React.MutableRefObj
     map.setMaxZoom(maxZoomLevel);
 
     if (firstFitRef.current || mode === 'editor') {
-      // Always start fitted perfectly to the container bounds
       firstFitRef.current = false;
-      map.setView(bounds.getCenter(), fitZoom);
+      if (mode === 'viewer') {
+        // In the viewer, start fully zoomed-out so the whole map is visible
+        // at launch (the user can then zoom in from the minimap controls).
+        // Defer so it overrides the initial fit applied by the MapContainer's
+        // `bounds` prop (its mount effect runs after this child effect).
+        setTimeout(() => map.setView(bounds.getCenter(), minZoomLevel), 0);
+      } else {
+        // Editor: always start fitted perfectly to the container bounds
+        map.setView(bounds.getCenter(), fitZoom);
+      }
     }
   }, [map, scenes, firstFitRef]);
   return null;
@@ -319,9 +334,10 @@ const GeoSearch: React.FC = () => {
 interface ProjectMapProps {
   mapRef?: React.MutableRefObject<L.Map | null>;
   hideZoomControl?: boolean;
+  mode?: 'editor' | 'viewer';
 }
 
-const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl }) => {
+const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, mode: modeProp }) => {
   const project = useProjectStore((state) => state.project);
   const scenes = useProjectStore((state) => state.scenes);
   const setMapConfig = useProjectStore((state) => state.setMapConfig);
@@ -769,15 +785,12 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl }) => {
           <MapContainer 
             key="custom-map"
             crs={L.CRS.Simple} 
-            bounds={bounds}
             style={{ height: '100%', width: '100%' }}
-            maxZoom={2}
-            minZoom={0}
             zoomControl={!hideZoomControl}
           >
             {mapRef && <MapRefBridge mapRef={mapRef} />}
             <MapEvents />
-            <FitBounds bounds={bounds} firstFitRef={firstFitRef} />
+            <FitBounds bounds={bounds} firstFitRef={firstFitRef} mode={modeProp} />
             <CenterOnSelected />
             <RecenterOnProjectChange />
             <ImageOverlay
@@ -986,14 +999,12 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl }) => {
           <MapContainer
             key="geo-map"
             center={mapConfig.center ?? [48.8566, 2.3522]}
-            zoom={13}
-            minZoom={1}
             style={{ height: '100%', width: '100%' }}
             zoomControl={!hideZoomControl}
           >
             {mapRef && <MapRefBridge mapRef={mapRef} />}
             <MapEvents />
-            <FitGeoBounds scenes={scenes} firstFitRef={firstFitRef} />
+            <FitGeoBounds scenes={scenes} firstFitRef={firstFitRef} mode={modeProp} />
             <CenterOnSelected />
             <RecenterOnProjectChange />
             {mode === 'editor' && <GeoSearch />}

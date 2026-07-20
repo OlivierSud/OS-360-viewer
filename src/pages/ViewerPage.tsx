@@ -179,34 +179,35 @@ const ViewerPage: React.FC = () => {
           controls orbiting on the outside of the circle. The wrapper is larger
           than the map so the buttons sit outside the rim. */}
        {showMap && !mapExpanded && (
-         <div
-           className="viewer-minimap"
-           style={{
-             position: 'absolute',
-             top: '15px',
-             right: '15px',
-             zIndex: 1050,
-             width: 'min(42vw, 42vh, 520px)',
-             height: 'min(42vw, 42vh, 520px)',
-           }}
-         >
-          {/* Circular map container, centered, sized to 30vw of the screen */}
           <div
+            className="viewer-minimap"
             style={{
               position: 'absolute',
-              top: '50%',
-              left: '50%',
-              transform: 'translate(-50%, -50%)',
-              width: '68.18%', // 30vw of a 44vw wrapper
-              height: '68.18%',
-              borderRadius: '50%',
-              border: '1px solid rgba(255,255,255,0.12)',
-              overflow: 'hidden',
-              boxShadow: `inset 0 1px 3px rgba(0,0,0,0.3), 0 0 0 3px ${accentColor}59, 0 12px 36px rgba(0,0,0,0.45)`,
-              background: '#111',
+              top: '15px',
+              right: '15px',
+              zIndex: 1050,
+              width: 'min(50vw, 50vh, 560px)',
+              height: 'min(50vw, 50vh, 560px)',
             }}
           >
-            <ProjectMap mapRef={mapRef} hideZoomControl />
+           {/* Circular map container, centered, sized to leave room for the
+               peripheral control buttons. */}
+           <div
+             style={{
+               position: 'absolute',
+               top: '50%',
+               left: '50%',
+               transform: 'translate(-50%, -50%)',
+               width: '62%',
+               height: '62%',
+               borderRadius: '50%',
+               border: '1px solid rgba(255,255,255,0.12)',
+               overflow: 'hidden',
+               boxShadow: `inset 0 1px 3px rgba(0,0,0,0.3), 0 0 0 3px ${accentColor}59, 0 12px 36px rgba(0,0,0,0.45)`,
+               background: '#111',
+             }}
+           >
+            <ProjectMap mapRef={mapRef} hideZoomControl mode="viewer" />
           </div>
 
           {/* Controls placed ON the periphery of the circle (centre 50%,50%,
@@ -214,20 +215,23 @@ const ViewerPage: React.FC = () => {
               Left arc (top→bottom): +, −, recentrer, agrandir.
               Top-right of the circle: close (✕) only. */}
           <button
+            className="mm-btn mm-zoom-in"
             onClick={() => mapRef.current?.zoomIn()}
             title="Zoom avant"
-            style={{ ...mapBtnStyle, position: 'absolute', left: '20.5%', top: '32.95%', transform: 'translate(-50%, -50%)', width: '48px', height: '48px', fontSize: '1.4rem', borderRadius: '50%', zIndex: 1100 }}
+            style={{ ...mapBtnStyle, position: 'absolute', left: '16%', top: '26%', transform: 'translate(-50%, -50%)', width: '42px', height: '42px', fontSize: '1.3rem', borderRadius: '50%', zIndex: 1100 }}
           >
             +
           </button>
           <button
+            className="mm-btn mm-zoom-out"
             onClick={() => mapRef.current?.zoomOut()}
             title="Zoom arrière"
-            style={{ ...mapBtnStyle, position: 'absolute', left: '15.91%', top: '50%', transform: 'translate(-50%, -50%)', width: '48px', height: '48px', fontSize: '1.4rem', borderRadius: '50%', zIndex: 1100 }}
+            style={{ ...mapBtnStyle, position: 'absolute', left: '8%', top: '50%', transform: 'translate(-50%, -50%)', width: '42px', height: '42px', fontSize: '1.3rem', borderRadius: '50%', zIndex: 1100 }}
           >
             −
           </button>
           <button
+            className="mm-btn mm-recenter"
             onClick={() => {
               const state = useProjectStore.getState();
               const activeScene = state.scenes.find(s => s.id === state.selectedSceneId);
@@ -236,24 +240,26 @@ const ViewerPage: React.FC = () => {
               }
             }}
             title="Recentrer sur le viewpoint actif"
-            style={{ ...mapBtnStyle, position: 'absolute', left: '20.5%', top: '67.05%', transform: 'translate(-50%, -50%)', width: '48px', height: '48px', borderRadius: '50%', zIndex: 1100 }}
+            style={{ ...mapBtnStyle, position: 'absolute', left: '16%', top: '74%', transform: 'translate(-50%, -50%)', width: '42px', height: '42px', borderRadius: '50%', zIndex: 1100 }}
           >
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M12 2C8.5 2 5.5 5 5.5 8.5c0 4.5 6.5 10 6.5 10s6.5-5.5 6.5-10C18.5 5 15.5 2 12 2zm0 10c-1.93 0-3.5-1.57-3.5-3.5S10.07 5 12 5s3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z" fill="currentColor" stroke="none" />
               <ellipse cx="12" cy="20" rx="6" ry="2" stroke="currentColor" stroke-width="2" fill="none" />
             </svg>
           </button>
           <button
+            className="mm-btn mm-expand"
             onClick={() => setMapExpanded(true)}
             title="Agrandir le plan"
-            style={{ ...mapBtnStyle, position: 'absolute', left: '32.95%', top: '79.5%', transform: 'translate(-50%, -50%)', width: '48px', height: '48px', fontSize: '1.3rem', borderRadius: '50%', zIndex: 1100 }}
+            style={{ ...mapBtnStyle, position: 'absolute', left: '34%', top: '88%', transform: 'translate(-50%, -50%)', width: '42px', height: '42px', fontSize: '1.2rem', borderRadius: '50%', zIndex: 1100 }}
           >
             ⤢
           </button>
           <button
+            className="mm-btn mm-close"
             onClick={() => setShowMap(false)}
             title="Fermer le plan"
-            style={{ ...mapBtnStyle, position: 'absolute', left: '74.1%', top: '25.9%', transform: 'translate(-50%, -50%)', width: '48px', height: '48px', fontSize: '1.3rem', borderRadius: '50%', zIndex: 1100 }}
+            style={{ ...mapBtnStyle, position: 'absolute', left: '76%', top: '24%', transform: 'translate(-50%, -50%)', width: '42px', height: '42px', fontSize: '1.2rem', borderRadius: '50%', zIndex: 1100 }}
           >
             ✕
           </button>
@@ -277,7 +283,7 @@ const ViewerPage: React.FC = () => {
             background: '#111',
           }}
         >
-          <ProjectMap mapRef={mapRef} hideZoomControl={true} />
+            <ProjectMap mapRef={mapRef} hideZoomControl={true} mode="viewer" />
           
           {/* Controls column inside the expanded map */}
           <div

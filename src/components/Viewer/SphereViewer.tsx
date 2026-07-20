@@ -249,7 +249,7 @@ const SphereViewer: React.FC = () => {
         container: containerRef.current,
         panorama: getPanorama(selectedScene),
         plugins,
-        navbar: ['zoom', 'fullscreen'],
+        navbar: true,
         ...(isCurrentVideo
           ? { adapter: [EquirectangularVideoAdapter, { muted: false, autoplay: true }] }
           : {}),
@@ -297,16 +297,11 @@ const SphereViewer: React.FC = () => {
       });
 
     // Keep the PSV navbar always visible (it is hidden by default and only
-    // revealed on tap, especially on touch devices). Continuously re-apply so
-    // PSV's own toggling (on tap) cannot hide it again.
+    // revealed on tap, especially on touch devices). Use the public API and
+    // re-apply on a short interval so PSV's own toggling cannot hide it.
     const showNavbar = () => {
       try {
-        const navbar = containerRef.current?.querySelector('.psv-navbar') as HTMLElement | null;
-        if (navbar) {
-          navbar.classList.add('psv-navbar--open');
-          navbar.style.bottom = '0';
-          navbar.style.display = 'flex';
-        }
+        viewerRef.current?.navbar?.show?.();
       } catch { /* ignore */ }
     };
 

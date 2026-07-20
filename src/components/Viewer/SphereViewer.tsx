@@ -216,6 +216,10 @@ const SphereViewer: React.FC = () => {
   const [fullscreenImageUrl, setFullscreenImageUrl] = useState<string | null>(null);
   const [fullscreenVideoUrl, setFullscreenVideoUrl] = useState<string | null>(null);
   const [vrActive, setVrActive] = useState(false);
+  // Mirror of vrActive so callbacks created once (e.g. the navbar interval)
+  // can read the current VR state without re-subscribing.
+  const vrActiveRef = useRef(false);
+  vrActiveRef.current = vrActive;
 
   // Gaze interaction (VR / stereo mode only): a reticle at the centre of the
   // left eye fills up while the user keeps looking at a marker; once full it
@@ -787,7 +791,13 @@ const SphereViewer: React.FC = () => {
     // re-apply on a short interval so PSV's own toggling cannot hide it.
     const showNavbar = () => {
       try {
-        viewerRef.current?.navbar?.show?.();
+        const navbar = viewerRef.current?.navbar;
+        if (!navbar) return;
+        // In VR the classic viewer navbar (zoom/fullscreen/VR buttons) must stay
+        // hidden — only the dedicated VR interface (reticles + per-eye overlay)
+        // should be visible until VR is turned off.
+        if (vrActiveRef.current) navbar.hide();
+        else navbar.show();
       } catch { /* ignore */ }
     };
 

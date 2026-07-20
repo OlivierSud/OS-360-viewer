@@ -1,5 +1,19 @@
 @import "./responsive.css";
 
+/* Force the PSV viewer navbar to stay visible at the bottom of the viewer on
+   every device/orientation (PSV hides it by default and only reveals it on tap,
+   especially on touch devices). Uses !important to win over PSV's `bottom:-40px`.
+   On touch devices, lift it above the OS system navigation bar (safe area) so it
+   is not hidden behind it. */
+.psv-navbar {
+  bottom: 0 !important;
+  display: flex !important;
+  visibility: visible !important;
+}
+.psv-container.psv--is-touch .psv-navbar {
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 10px) !important;
+}
+
 :root {
   --bg-color: #1e1e1e;
   --panel-bg: #252526;

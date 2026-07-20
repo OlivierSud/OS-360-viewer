@@ -1181,16 +1181,14 @@ const SphereViewer: React.FC = () => {
             width: '52px',
             height: '52px',
             borderRadius: '50%',
-            border: '1px solid rgba(255,255,255,0.15)',
-            background: vrActive ? '#007acc' : 'rgba(14,14,16,0.8)',
-            backdropFilter: 'blur(8px)',
-            WebkitBackdropFilter: 'blur(8px)',
+            border: vrActive ? '2px solid white' : `1px solid ${accentColor}`,
+            background: accentColor,
             color: 'white',
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            boxShadow: '0 4px 14px rgba(0,0,0,0.5)',
+            boxShadow: `0 0 0 3px ${accentColor}59, 0 4px 14px rgba(0,0,0,0.5)`,
           }}
         >
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

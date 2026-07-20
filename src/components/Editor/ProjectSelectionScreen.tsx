@@ -176,7 +176,7 @@ const ProjectSelectionScreen: React.FC<ProjectSelectionScreenProps> = ({ onClose
         )}
 
         {displayed.map((project) => (
-          <button
+           <button
             key={project.id}
             onClick={() => void handleOpen(project.id)}
             style={{

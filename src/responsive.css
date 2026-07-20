@@ -262,16 +262,6 @@
     z-index: 2100 !important;
   }
 
-  /* Landscape phones: the system navigation bar sits on the side, so the
-     bottom-right corner is hidden. Move the VR button to the bottom-left. */
-  @media (orientation: landscape) {
-    .viewer-vr-button {
-      right: auto !important;
-      left: 15px !important;
-      bottom: 15px !important;
-    }
-  }
-
   /* Project selection screen */
   .selection-screen {
     padding: 16px;
@@ -298,5 +288,21 @@
 @media (max-width: 400px) {
   .toolbar h1 {
     font-size: 0.85rem;
+  }
+}
+
+/* Landscape phones/tablets: the system navigation bar sits on the side, so the
+   bottom-right corner is hidden. Move the VR button to the bottom-left and keep
+   it clear of the circular minimap (top-right). Covers real phone landscape
+   widths, which exceed 768px. */
+@media (orientation: landscape) and (max-height: 560px) {
+  .viewer-vr-button {
+    right: auto !important;
+    left: 15px !important;
+    bottom: 15px !important;
+    top: auto !important;
+    width: 52px !important;
+    height: 52px !important;
+    z-index: 2100 !important;
   }
 }

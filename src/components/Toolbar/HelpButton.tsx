@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useProjectStore } from '../../state/projectStore';
 import { createViewerUrl } from '../../services/cloudflareApi';
+import QrCode from '../Common/QrCode';
+import { getLanOrigin, getLanIp, detectLanIp } from '../../utils/localIp';
 
 const section: React.CSSProperties = {
   marginBottom: '16px',
@@ -29,7 +31,14 @@ const li: React.CSSProperties = {
 
 const HelpButton: React.FC = () => {
   const [open, setOpen] = useState(false);
+  const [lanIp, setLanIp] = useState<string | undefined>(getLanIp());
   const currentProjectId = useProjectStore((s) => s.currentProjectId);
+
+  // Detect the LAN IP so QR codes point to the real network address (not
+  // localhost) when the editor is opened from http://localhost:5173.
+  React.useEffect(() => {
+    detectLanIp().then((ip) => { if (ip) setLanIp(ip); });
+  }, []);
   const projectTitle = useProjectStore((s) => s.project?.project?.title);
 
   const viewerUrl = currentProjectId ? createViewerUrl(currentProjectId) : null;
@@ -252,6 +261,62 @@ const HelpButton: React.FC = () => {
               ) : (
                 <p style={{ ...p, color: '#888', marginTop: '8px' }}>
                   Aucun projet enregistré : sauvegardez (💾 Save) pour générer le code d'intégration.
+                </p>
+              )}
+            </div>
+
+            <div style={section}>
+              <h2 style={h2}>Accès mobile (QR code)</h2>
+              <p style={p}>
+                Scannez avec votre téléphone (même réseau Wi-Fi) pour ouvrir directement
+                le projet ouvert dans l'éditeur ou la visionneuse.
+              </p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                <label style={{ fontSize: '0.8rem', color: '#cfcfcf' }}>IP locale du PC :</label>
+                <input
+                  type="text"
+                  value={lanIp ?? ''}
+                  placeholder="ex: 192.168.1.42"
+                  onChange={(e) => setLanIp(e.target.value.trim() || undefined)}
+                  style={{
+                    flex: 1,
+                    maxWidth: '200px',
+                    background: '#1e1e1e',
+                    color: '#eee',
+                    border: '1px solid #444',
+                    borderRadius: '4px',
+                    padding: '4px 8px',
+                    fontSize: '0.8rem',
+                    fontFamily: 'monospace',
+                  }}
+                />
+              </div>
+              {viewerUrl ? (
+                (() => {
+                  const base = import.meta.env.BASE_URL.endsWith('/')
+                    ? import.meta.env.BASE_URL
+                    : `${import.meta.env.BASE_URL}/`;
+                  let origin = typeof window !== 'undefined' ? window.location.origin : '';
+                  if (lanIp && /^(\d{1,3}\.){3}\d{1,3}$/.test(lanIp)) {
+                    try {
+                      const u = new URL(origin);
+                      origin = `${u.protocol}//${lanIp}:${u.port}`;
+                    } catch { /* ignore */ }
+                  } else {
+                    origin = getLanOrigin(origin, lanIp);
+                  }
+                  const editorQr = `${origin}${base}editor?id=${encodeURIComponent(currentProjectId!)}`;
+                  const viewerQr = `${origin}${base}viewer?id=${encodeURIComponent(currentProjectId!)}`;
+                  return (
+                    <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap', justifyContent: 'center', marginTop: '4px' }}>
+                      <QrCode value={editorQr} size={120} title="✏️ Éditeur" />
+                      <QrCode value={viewerQr} size={120} title="👁️ Visionneuse" />
+                    </div>
+                  );
+                })()
+              ) : (
+                <p style={{ ...p, color: '#888', marginTop: '8px' }}>
+                  Aucun projet ouvert : ouvrez ou créez un projet pour générer les QR codes.
                 </p>
               )}
             </div>

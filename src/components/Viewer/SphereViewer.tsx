@@ -276,6 +276,9 @@ const SphereViewer: React.FC = () => {
       for (const m of markers) {
         const pos = m.position;
         if (!pos || typeof pos.yaw !== 'number' || typeof pos.pitch !== 'number') continue;
+        // Only draw markers that are actually in front of the current view.
+        let visible = true;
+        try { visible = Boolean(v.dataHelper.isPointVisible(pos)); } catch { visible = true; }
         const screen = v.dataHelper.sphericalCoordsToViewerCoords(pos);
         if (!screen || typeof screen.x !== 'number' || typeof screen.y !== 'number') continue;
         seen.add(m.id);
@@ -286,17 +289,18 @@ const SphereViewer: React.FC = () => {
             el.style.position = 'absolute';
             el.style.transform = 'translate(-50%, -50%)';
             el.style.pointerEvents = 'none';
-            el.style.display = 'flex';
+            el.style.display = 'none';
             el.style.alignItems = 'center';
             el.style.justifyContent = 'center';
-            el.style.width = '34px';
-            el.style.height = '34px';
+            el.style.width = '40px';
+            el.style.height = '40px';
             el.style.borderRadius = '50%';
-            el.style.border = '2px solid rgba(255,255,255,0.9)';
-            el.style.background = 'rgba(0,0,0,0.45)';
+            el.style.border = '3px solid #fff';
+            el.style.background = 'rgba(0,0,0,0.5)';
             el.style.color = '#fff';
-            el.style.fontSize = '18px';
-            el.style.boxShadow = '0 0 8px rgba(0,0,0,0.6)';
+            el.style.fontSize = '20px';
+            el.style.zIndex = '1355';
+            el.style.boxShadow = '0 0 10px rgba(0,0,0,0.7)';
             overlay.appendChild(el);
             return el;
           };
@@ -304,14 +308,15 @@ const SphereViewer: React.FC = () => {
           vrMarkerElsRef.current.set(m.id, pair);
         }
         const isLink = Boolean(m.data?.target);
-        pair.left.textContent = isLink ? '➤' : '◆';
-        pair.right.textContent = isLink ? '➤' : '◆';
+        const glyph = isLink ? '➤' : '◆';
+        pair.left.textContent = glyph;
+        pair.right.textContent = glyph;
         pair.left.style.left = `${screen.x / 2}px`;
         pair.left.style.top = `${screen.y}px`;
         pair.right.style.left = `${halfW + screen.x / 2}px`;
         pair.right.style.top = `${screen.y}px`;
-        pair.left.style.display = 'flex';
-        pair.right.style.display = 'flex';
+        pair.left.style.display = visible ? 'flex' : 'none';
+        pair.right.style.display = visible ? 'flex' : 'none';
       }
       // Remove overlays whose marker disappeared.
       for (const [id, pair] of vrMarkerElsRef.current) {
@@ -1172,14 +1177,15 @@ const SphereViewer: React.FC = () => {
         }}
       />
 
-      {/* VR gaze reticle: a charging ring at the centre of the LEFT eye. Only
+      {/* VR gaze reticles: a charging ring at the centre of EACH eye. Only
           shown in stereo/VR mode; it fills while the user looks at a marker and
           triggers it when complete. */}
-      {vrActive && (
+      {vrActive && [25, 75].map((pct) => (
         <div
+          key={pct}
           style={{
             position: 'absolute',
-            left: '25%',
+            left: `${pct}%`,
             top: '50%',
             transform: 'translate(-50%, -50%)',
             zIndex: 1400,
@@ -1208,7 +1214,7 @@ const SphereViewer: React.FC = () => {
             <circle cx="32" cy="32" r="3" fill="rgba(255,255,255,0.85)" />
           </svg>
         </div>
-      )}
+      ))}
 
       {/* VR per-eye marker overlays: each PSV marker is drawn twice (left eye /
           right eye) so it stays correctly placed in the stereo view. */}

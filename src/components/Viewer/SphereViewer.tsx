@@ -1028,8 +1028,14 @@ const SphereViewer: React.FC = () => {
       setViewerEpoch((e) => e + 1);
       vrEnabledRef.current = vrEnabled;
       // Keep the VR interface active across the rebuild: the VR DOM layer is torn
-      // down and rebuilt via viewerEpoch (no React portal involved, so no crash),
-      // and the stereo plugin stays enabled — the user remains in VR.
+      // down and rebuilt via viewerEpoch (no React portal involved, so no crash).
+      // The freshly created viewer's stereo plugin is NOT auto-enabled, so
+      // re-arm it if we were already in VR — the user must stay in the experience
+      // until they tap the VR icon to quit.
+      if (vrActiveRef.current) {
+        const stereo = (viewerRef.current as any)?.getPlugin('stereo');
+        window.setTimeout(() => { try { stereo?.start?.(); } catch { /* ignore */ } }, 200);
+      }
       return;
     }
 
@@ -1067,6 +1073,12 @@ const SphereViewer: React.FC = () => {
       // tears down the stale node and rebuilds a fresh one — without ever
       // crashing React (no portal involved).
       setViewerEpoch((e) => e + 1);
+      // Re-arm the stereo plugin if we were in VR (setPanorama may have dropped
+      // it); the user stays in the experience until they tap the VR icon.
+      if (vrActiveRef.current) {
+        const stereo = (viewerRef.current as any)?.getPlugin('stereo');
+        window.setTimeout(() => { try { stereo?.start?.(); } catch { /* ignore */ } }, 200);
+      }
     };
 
     // Give the zoom-in animation a brief moment before swapping the panorama.

@@ -934,7 +934,7 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl }) => {
                 )}
               </div>
             )}
-            {!isPlacing && !isMoving && !isRotating && (
+            {!isPlacing && !isPlacingProjectLink && !isMoving && !isRotating && !isLinking && (
               <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
                 <button 
                   onClick={() => {
@@ -1151,7 +1151,7 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl }) => {
                 )}
               </div>
             )}
-            {!isPlacing && !isMoving && !isRotating && (
+            {!isPlacing && !isPlacingProjectLink && !isMoving && !isRotating && !isLinking && (
               <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
                 <button 
                   onClick={() => {

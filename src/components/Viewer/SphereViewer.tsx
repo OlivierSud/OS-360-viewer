@@ -535,18 +535,16 @@ const SphereViewer: React.FC = () => {
       setSceneLoading(false);
     });
 
-    // Drive the VR overlay/gaze state from the ACTUAL stereo plugin state. The
-    // `stereo-updated` event is not reliably delivered through the viewer event
-    // bus, so we instead poll `stereo.isEnabled()` (the ground truth of whether
-    // we are really in stereoscopic VR). This guarantees our reticles and per-eye
-    // markers are visible ONLY while stereo is enabled, and hidden otherwise.
+    // Keep `vrActive` in sync with the real stereo state. The VR button forces
+    // `vrActive(true)` optimistically on click so the interface appears instantly;
+    // this poll only REINFORCES it when stereo actually becomes enabled. It never
+    // hides the interface on its own (the button's "quit" handler does that), so
+    // the UI stays visible from the moment the user taps the VR button.
     let vrPollTimer: number | undefined;
     const syncVr = () => {
       const stereo = viewerRef.current?.getPlugin('stereo') as any;
-      const enabled = Boolean(stereo?.isEnabled?.());
-      setVrActive((prev) => (prev === enabled ? prev : enabled));
+      if (stereo?.isEnabled?.()) setVrActive(true);
     };
-    syncVr();
     vrPollTimer = window.setInterval(syncVr, 150);
     vrPollTimerRef.current = vrPollTimer;
 
@@ -1486,12 +1484,16 @@ const SphereViewer: React.FC = () => {
             if (!v) return;
             const stereo = v.getPlugin('stereo') as any;
             if (!stereo) return;
-            // The StereoPlugin handles gyroscope + fullscreen + stereo render.
-            // `vrActive` (and thus our per-eye overlay + reticles) is driven by
-            // the polling of `stereo.isEnabled()` — the real stereo state.
+            // Show the VR interface IMMEDIATELY on click (optimistic), so the
+            // per-eye overlay + reticles appear right away regardless of how the
+            // gyroscope/fullscreen permission resolves. The polling of
+            // `stereo.isEnabled()` then keeps `vrActive` in sync with the real
+            // stereo state afterwards.
             if (!vrActive) {
+              setVrActive(true);
               try { stereo.start?.(); } catch { /* ignore */ }
             } else {
+              setVrActive(false);
               try { stereo.stop?.(); } catch { /* ignore */ }
             }
           }}

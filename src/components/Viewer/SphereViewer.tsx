@@ -28,6 +28,8 @@ const SphereViewer: React.FC = () => {
   const currentIsVideoRef = useRef(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const navbarIntervalRef = useRef<number | null>(null);
+  const vrOverlayRef = useRef<HTMLDivElement | null>(null);
+  const vrMarkerElsRef = useRef<Map<string, { left: HTMLDivElement; right: HTMLDivElement }>>(new Map());
   const addHotspotCursor = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Ctext x='16' y='22' text-anchor='middle' font-size='22'%3E%E2%AD%95%3C/text%3E%3C/svg%3E") 16 16, crosshair`;
 
   // Same pill button style as the map editor controls (Add 360 / Move)
@@ -223,6 +225,11 @@ const SphereViewer: React.FC = () => {
       gazeTargetRef.current = null;
       gazeProgressRef.current = 0;
       setGazeProgress(0);
+      for (const [, pair] of vrMarkerElsRef.current) {
+        pair.left.remove();
+        pair.right.remove();
+      }
+      vrMarkerElsRef.current.clear();
       return;
     }
     let raf = 0;
@@ -246,25 +253,86 @@ const SphereViewer: React.FC = () => {
       lastTs = ts;
       const v = viewerRef.current;
       const markersPlugin = v?.getPlugin(MarkersPlugin) as any;
-      if (!v || !markersPlugin) return;
+      const container = containerRef.current;
+      const overlay = vrOverlayRef.current;
+      if (!v || !markersPlugin || !container || !overlay) return;
 
       const view = v.getPosition?.() as { yaw: number; pitch: number } | undefined;
       if (!view) return;
 
-      let best: { id: string; data: any; dist: number } | null = null;
+      const cw = container.clientWidth;
+      // In stereo the canvas is rendered twice (left eye on the left half,
+      // right eye on the right half). A marker at canvas-x x appears at x/2 in
+      // the left eye and at cw/2 + x/2 in the right eye (same y).
+      const halfW = cw / 2;
+
+      let markers: any[] = [];
       try {
-        const markers = markersPlugin.getMarkers?.() ?? [];
-        for (const m of markers) {
-          const pos = m.position;
-          if (!pos || typeof pos.yaw !== 'number' || typeof pos.pitch !== 'number') continue;
-          const dyaw = angleDiff(view.yaw, pos.yaw);
-          const dpitch = view.pitch - pos.pitch;
-          const dist = Math.hypot(dyaw, dpitch);
-          if (dist < CENTER_THRESHOLD && (!best || dist < best.dist)) {
-            best = { id: m.id, data: m.data ?? {}, dist };
-          }
-        }
+        markers = markersPlugin.getMarkers?.() ?? [];
       } catch { /* ignore */ }
+
+      // Update the per-eye VR overlays (kept in sync with PSV markers).
+      const seen = new Set<string>();
+      for (const m of markers) {
+        const pos = m.position;
+        if (!pos || typeof pos.yaw !== 'number' || typeof pos.pitch !== 'number') continue;
+        const screen = v.dataHelper.sphericalCoordsToViewerCoords(pos);
+        if (!screen || typeof screen.x !== 'number' || typeof screen.y !== 'number') continue;
+        seen.add(m.id);
+        let pair = vrMarkerElsRef.current.get(m.id);
+        if (!pair) {
+          const make = () => {
+            const el = document.createElement('div');
+            el.style.position = 'absolute';
+            el.style.transform = 'translate(-50%, -50%)';
+            el.style.pointerEvents = 'none';
+            el.style.display = 'flex';
+            el.style.alignItems = 'center';
+            el.style.justifyContent = 'center';
+            el.style.width = '34px';
+            el.style.height = '34px';
+            el.style.borderRadius = '50%';
+            el.style.border = '2px solid rgba(255,255,255,0.9)';
+            el.style.background = 'rgba(0,0,0,0.45)';
+            el.style.color = '#fff';
+            el.style.fontSize = '18px';
+            el.style.boxShadow = '0 0 8px rgba(0,0,0,0.6)';
+            overlay.appendChild(el);
+            return el;
+          };
+          pair = { left: make(), right: make() };
+          vrMarkerElsRef.current.set(m.id, pair);
+        }
+        const isLink = Boolean(m.data?.target);
+        pair.left.textContent = isLink ? '➤' : '◆';
+        pair.right.textContent = isLink ? '➤' : '◆';
+        pair.left.style.left = `${screen.x / 2}px`;
+        pair.left.style.top = `${screen.y}px`;
+        pair.right.style.left = `${halfW + screen.x / 2}px`;
+        pair.right.style.top = `${screen.y}px`;
+        pair.left.style.display = 'flex';
+        pair.right.style.display = 'flex';
+      }
+      // Remove overlays whose marker disappeared.
+      for (const [id, pair] of vrMarkerElsRef.current) {
+        if (!seen.has(id)) {
+          pair.left.remove();
+          pair.right.remove();
+          vrMarkerElsRef.current.delete(id);
+        }
+      }
+
+      let best: { id: string; data: any; dist: number } | null = null;
+      for (const m of markers) {
+        const pos = m.position;
+        if (!pos || typeof pos.yaw !== 'number' || typeof pos.pitch !== 'number') continue;
+        const dyaw = angleDiff(view.yaw, pos.yaw);
+        const dpitch = view.pitch - pos.pitch;
+        const dist = Math.hypot(dyaw, dpitch);
+        if (dist < CENTER_THRESHOLD && (!best || dist < best.dist)) {
+          best = { id: m.id, data: m.data ?? {}, dist };
+        }
+      }
 
       const currentTarget = gazeTargetRef.current;
       const currentProgress = gazeProgressRef.current;
@@ -1142,6 +1210,21 @@ const SphereViewer: React.FC = () => {
         </div>
       )}
 
+      {/* VR per-eye marker overlays: each PSV marker is drawn twice (left eye /
+          right eye) so it stays correctly placed in the stereo view. */}
+      {vrActive && (
+        <div
+          ref={vrOverlayRef}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 1350,
+            pointerEvents: 'none',
+            overflow: 'hidden',
+          }}
+        />
+      )}
+
       {/* Hidden audio element: plays the viewpoint/project ambient track */}
       <audio ref={audioRef} style={{ display: 'none' }} />
 
@@ -1337,18 +1420,7 @@ const SphereViewer: React.FC = () => {
             const stereo = v.getPlugin('stereo') as any;
             if (!vrActive) {
               try { gyro?.start?.(); } catch { /* permission may be required */ }
-              // StereoPlugin hides markers/navbar/panel on start; re-show markers
-              // so hotspots & path arrows remain visible (and gaze can target them).
-              const markersPlugin = v.getPlugin('markers') as any;
-              const showMarkers = () => { try { markersPlugin?.showAllMarkers?.(); } catch { /* ignore */ } };
-              try {
-                const p = stereo?.start?.();
-                if (p && typeof p.then === 'function') {
-                  p.then(showMarkers).catch(() => {});
-                } else {
-                  showMarkers();
-                }
-              } catch { /* ignore */ }
+              try { stereo?.start?.(); } catch { /* ignore */ }
               if (document.documentElement.requestFullscreen) {
                 document.documentElement.requestFullscreen().catch(() => {});
               }

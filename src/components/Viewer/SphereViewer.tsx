@@ -266,17 +266,17 @@ const SphereViewer: React.FC = () => {
       const cw = window.innerWidth || container.clientWidth || 1;
       const ch = window.innerHeight || container.clientHeight || 1;
 
-      // Per-eye projection. Each eye shows the SAME horizontal/vertical FOV as
-      // the mono camera, compressed into half the width. So a marker at angular
-      // offset (dyaw, dpitch) from the view centre lands at:
-      //   eyeX = eyeCenterX + (cw/4) * (dyaw / (hFov/2))
-      //   eyeY = ch/2        - (ch/2) * (dpitch / (vFov/2))
-      // with eyeCenterX = cw/4 (left eye) or 3cw/4 (right eye).
+      // Per-eye projection. The three.js StereoCamera halves the eye aspect, so
+      // each eye shows HALF the mono horizontal FOV compressed into its half of
+      // the screen. A marker at angular offset (dyaw, dpitch) from the view
+      // centre therefore lands at (within the full-canvas coords):
+      //   eyeX = eyeCentreX + cw * (dyaw / hFov)
+      //   eyeY = ch/2        - ch * (dpitch / vFov)
+      // with eyeCentreX = cw/4 (left) or 3cw/4 (right). This is equivalent to
+      // taking the mono screen-x X and using X - cw/4 / X + cw/4.
       const st: any = (v as any).state ?? {};
-      const hFov = typeof st.hFov === 'number' ? st.hFov : Math.PI / 2;
-      const vFov = typeof st.vFov === 'number' ? st.vFov : Math.PI / 2;
-      const halfHFov = hFov / 2 || 1;
-      const halfVFov = vFov / 2 || 1;
+      const hFov = (typeof st.hFov === 'number' && st.hFov > 0) ? st.hFov : Math.PI / 2;
+      const vFov = (typeof st.vFov === 'number' && st.vFov > 0) ? st.vFov : Math.PI / 2;
       const eyeCenterL = cw / 4;
       const eyeCenterR = (3 * cw) / 4;
 
@@ -304,8 +304,8 @@ const SphereViewer: React.FC = () => {
         }
         const dyaw = angleDiff(pos.yaw, view.yaw);
         const dpitch = pos.pitch - view.pitch;
-        const xOff = (cw / 4) * (dyaw / halfHFov);
-        const yOff = (ch / 2) * (dpitch / halfVFov);
+        const xOff = cw * (dyaw / hFov);
+        const yOff = ch * (dpitch / vFov);
         const leftX = eyeCenterL + xOff;
         const rightX = eyeCenterR + xOff;
         const y = ch / 2 - yOff;
@@ -340,12 +340,16 @@ const SphereViewer: React.FC = () => {
         const glyph = isLink ? '➤' : '◆';
         pair.left.textContent = glyph;
         pair.right.textContent = glyph;
+        // A marker is only drawn in an eye if it falls inside that eye's half of
+        // the screen (each eye sees half the horizontal FOV).
+        const leftVisible = visible && leftX >= 0 && leftX <= cw / 2;
+        const rightVisible = visible && rightX >= cw / 2 && rightX <= cw;
         pair.left.style.left = `${leftX}px`;
         pair.left.style.top = `${y}px`;
         pair.right.style.left = `${rightX}px`;
         pair.right.style.top = `${y}px`;
-        pair.left.style.display = 'flex';
-        pair.right.style.display = 'flex';
+        pair.left.style.display = leftVisible ? 'flex' : 'none';
+        pair.right.style.display = rightVisible ? 'flex' : 'none';
       }
       // Remove overlays whose marker disappeared.
       for (const [id, pair] of vrMarkerElsRef.current) {

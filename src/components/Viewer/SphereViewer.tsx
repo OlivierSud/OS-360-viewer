@@ -495,6 +495,14 @@ const SphereViewer: React.FC = () => {
       showNavbar();
       setSceneLoading(false);
     });
+
+    // Drive the VR overlay/gaze state from the actual stereo plugin state. This
+    // ensures our reticles and per-eye markers only appear once stereo is truly
+    // enabled (after the gyroscope permission is granted), and disappear as soon
+    // as it stops — avoiding the "stuck visible" / "invisible in VR" mismatch.
+    (viewerRef.current as any).addEventListener('stereo-updated', (e: any) => {
+      setVrActive(Boolean(e?.enabled));
+    });
     showNavbar();
     const navbarInterval = window.setInterval(showNavbar, 500);
     navbarIntervalRef.current = navbarInterval;
@@ -1179,16 +1187,17 @@ const SphereViewer: React.FC = () => {
 
       {/* VR gaze reticles: a charging ring at the centre of EACH eye. Only
           shown in stereo/VR mode; it fills while the user looks at a marker and
-          triggers it when complete. */}
+          triggers it when complete. Rendered `fixed` so it covers the full
+          viewport even when PSV enters fullscreen for stereoscopic mode. */}
       {vrActive && [25, 75].map((pct) => (
         <div
           key={pct}
           style={{
-            position: 'absolute',
+            position: 'fixed',
             left: `${pct}%`,
             top: '50%',
             transform: 'translate(-50%, -50%)',
-            zIndex: 1400,
+            zIndex: 9991,
             pointerEvents: 'none',
             width: '64px',
             height: '64px',
@@ -1217,14 +1226,15 @@ const SphereViewer: React.FC = () => {
       ))}
 
       {/* VR per-eye marker overlays: each PSV marker is drawn twice (left eye /
-          right eye) so it stays correctly placed in the stereo view. */}
+          right eye) so it stays correctly placed in the stereo view. Rendered
+          `fixed` to cover the full viewport in stereoscopic fullscreen mode. */}
       {vrActive && (
         <div
           ref={vrOverlayRef}
           style={{
-            position: 'absolute',
+            position: 'fixed',
             inset: 0,
-            zIndex: 1350,
+            zIndex: 9990,
             pointerEvents: 'none',
             overflow: 'hidden',
           }}
@@ -1422,19 +1432,15 @@ const SphereViewer: React.FC = () => {
           onClick={() => {
             const v = viewerRef.current;
             if (!v) return;
-            const gyro = v.getPlugin('gyroscope') as any;
             const stereo = v.getPlugin('stereo') as any;
+            if (!stereo) return;
+            // Let the StereoPlugin handle gyroscope + fullscreen + stereo render.
+            // The `stereo-updated` event drives `vrActive`, so the overlay and
+            // reticles only show once stereo is actually enabled.
             if (!vrActive) {
-              try { gyro?.start?.(); } catch { /* permission may be required */ }
-              try { stereo?.start?.(); } catch { /* ignore */ }
-              if (document.documentElement.requestFullscreen) {
-                document.documentElement.requestFullscreen().catch(() => {});
-              }
-              setVrActive(true);
+              try { stereo.start?.(); } catch { /* ignore */ }
             } else {
-              try { stereo?.stop?.(); } catch { /* ignore */ }
-              try { gyro?.stop?.(); } catch { /* ignore */ }
-              setVrActive(false);
+              try { stereo.stop?.(); } catch { /* ignore */ }
             }
           }}
           title={vrActive ? 'Quitter le mode VR' : 'Mode VR (casque cardboard)'}

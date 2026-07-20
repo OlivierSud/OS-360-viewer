@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { Viewer } from '@photo-sphere-viewer/core';
 import '@photo-sphere-viewer/core/index.css';
 import { MarkersPlugin } from '@photo-sphere-viewer/markers-plugin';
@@ -29,7 +28,16 @@ const SphereViewer: React.FC = () => {
   const currentIsVideoRef = useRef(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const navbarIntervalRef = useRef<number | null>(null);
+  // The whole VR interface (reticles + per-eye marker overlay) is built as a
+  // SINGLE plain DOM subtree (`vrLayerRef`) appended directly into the PSV
+  // container. It is intentionally NOT managed by React (no portal) so that PSV's
+  // own container teardown on panorama/scene change can remove it without
+  // crashing React with "removeChild ... not a child of this node". We rebuild it
+  // ourselves whenever vrActive turns on and tear it down when it turns off.
+  const vrLayerRef = useRef<HTMLDivElement | null>(null);
   const vrOverlayRef = useRef<HTMLDivElement | null>(null);
+  const vrReticleRefs = useRef<{ left: SVGCircleElement | null; right: SVGCircleElement | null } | null>(null);
+  const vrReticleWrapRef = useRef<{ left: HTMLDivElement; right: HTMLDivElement } | null>(null);
   const vrMarkerElsRef = useRef<Map<string, { left: HTMLDivElement; right: HTMLDivElement }>>(new Map());
   // Per-eye "close" targeting points (✕) shown in VR when a hotspot popup is open,
   // so the user can gaze at the cross to dismiss the popup.
@@ -39,10 +47,16 @@ const SphereViewer: React.FC = () => {
   // is drawn in the top-right corner of this card.
   const vrPopupElsRef = useRef<{ left: HTMLDivElement; right: HTMLDivElement } | null>(null);
   const vrPollTimerRef = useRef<number | undefined>(undefined);
-  // The PSV container is the element PSV fullscreens in VR. Our VR overlay and
-  // reticles must live INSIDE it (via a portal) so they remain visible while
-  // the container is in fullscreen — siblings outside it would be clipped away.
-  const [vrPortalEl, setVrPortalEl] = useState<HTMLElement | null>(null);
+  // Bumped every time the PSV viewer instance is (re)created, so the VR DOM
+  // layer — which lives inside the PSV container and gets wiped by PSV's own
+  // teardown — can be rebuilt into the fresh container.
+  const [viewerEpoch, setViewerEpoch] = useState(0);
+  // VR active state (true while the stereoscopic/cardboard interface is shown).
+  const [vrActive, setVrActive] = useState(false);
+  // Mirror of vrActive so callbacks created once (e.g. the navbar interval)
+  // can read the current VR state without re-subscribing.
+  const vrActiveRef = useRef(false);
+  vrActiveRef.current = vrActive;
   const addHotspotCursor = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Ctext x='16' y='22' text-anchor='middle' font-size='22'%3E%E2%AD%95%3C/text%3E%3C/svg%3E") 16 16, crosshair`;
 
   // Same pill button style as the map editor controls (Add 360 / Move)
@@ -165,11 +179,83 @@ const SphereViewer: React.FC = () => {
     return () => mq.removeEventListener('change', onChange);
   }, []);
 
-  // Capture the PSV container element so our VR overlay/reticles can be portaled
-  // inside it (required for them to stay visible during PSV fullscreen).
+  // Build / tear down the VR interface as a plain DOM subtree appended INSIDE the
+  // PSV container (so it survives PSV's fullscreen). It is not a React portal: the
+  // subtree is ours to remove, so PSV's container teardown on scene change can
+  // wipe it without ever crashing React with a removeChild error. Rebuilt whenever
+  // vrActive turns on OR the viewer instance is recreated (viewerEpoch).
   React.useEffect(() => {
-    setVrPortalEl(containerRef.current);
-  }, []);
+    const container = containerRef.current;
+    if (!vrActive || !container) return;
+    if (vrLayerRef.current) return; // already built (e.g. effect re-run)
+
+    const NS = 'http://www.w3.org/2000/svg';
+    const layer = document.createElement('div');
+    layer.setAttribute('data-vr-layer', '1');
+    Object.assign(layer.style, {
+      position: 'absolute', inset: '0', zIndex: '9990',
+      pointerEvents: 'none', overflow: 'hidden',
+    } as CSSStyleDeclaration);
+    container.appendChild(layer);
+    vrLayerRef.current = layer;
+
+    // Per-eye reticles (charging rings at 25% / 75%).
+    const makeReticle = (pct: number) => {
+      const wrap = document.createElement('div');
+      Object.assign(wrap.style, {
+        position: 'absolute', left: `${pct}%`, top: '50%',
+        transform: 'translate(-50%, -50%)', zIndex: '9991',
+        pointerEvents: 'none', width: '64px', height: '64px',
+      } as CSSStyleDeclaration);
+      const svg = document.createElementNS(NS, 'svg');
+      svg.setAttribute('width', '64'); svg.setAttribute('height', '64');
+      svg.setAttribute('viewBox', '0 0 64 64');
+      const base = document.createElementNS(NS, 'circle');
+      base.setAttribute('cx', '32'); base.setAttribute('cy', '32'); base.setAttribute('r', '28');
+      base.setAttribute('fill', 'none'); base.setAttribute('stroke', 'rgba(255,255,255,0.35)');
+      base.setAttribute('stroke-width', '4');
+      const prog = document.createElementNS(NS, 'circle');
+      prog.setAttribute('cx', '32'); prog.setAttribute('cy', '32'); prog.setAttribute('r', '28');
+      prog.setAttribute('fill', 'none'); prog.setAttribute('stroke', '#ffffff');
+      prog.setAttribute('stroke-width', '4'); prog.setAttribute('stroke-linecap', 'round');
+      prog.setAttribute('stroke-dasharray', `${2 * Math.PI * 28}`);
+      prog.setAttribute('stroke-dashoffset', `${2 * Math.PI * 28}`);
+      prog.setAttribute('transform', 'rotate(-90 32 32)');
+      const dot = document.createElementNS(NS, 'circle');
+      dot.setAttribute('cx', '32'); dot.setAttribute('cy', '32'); dot.setAttribute('r', '3');
+      dot.setAttribute('fill', 'rgba(255,255,255,0.85)');
+      svg.appendChild(base); svg.appendChild(prog); svg.appendChild(dot);
+      wrap.appendChild(svg);
+      layer.appendChild(wrap);
+      return { wrap, prog };
+    };
+    const rLeft = makeReticle(25);
+    const rRight = makeReticle(75);
+    vrReticleWrapRef.current = { left: rLeft.wrap, right: rRight.wrap };
+    vrReticleRefs.current = { left: rLeft.prog, right: rRight.prog };
+
+    // Overlay where per-eye marker / popup / close targeting points are appended.
+    const overlay = document.createElement('div');
+    Object.assign(overlay.style, {
+      position: 'absolute', inset: '0', zIndex: '9990',
+      pointerEvents: 'none', overflow: 'hidden',
+    } as CSSStyleDeclaration);
+    layer.appendChild(overlay);
+    vrOverlayRef.current = overlay;
+
+    return () => {
+      try { layer.remove(); } catch { /* ignore */ }
+      vrLayerRef.current = null;
+      vrOverlayRef.current = null;
+      vrReticleRefs.current = null;
+      vrReticleWrapRef.current = null;
+      // Drop any dynamically created children (markers / popup / close) too.
+      for (const [, pair] of vrMarkerElsRef.current) { pair.left.remove(); pair.right.remove(); }
+      vrMarkerElsRef.current.clear();
+      if (vrCloseElsRef.current) { vrCloseElsRef.current.left.remove(); vrCloseElsRef.current.right.remove(); vrCloseElsRef.current = null; }
+      if (vrPopupElsRef.current) { vrPopupElsRef.current.left.remove(); vrPopupElsRef.current.right.remove(); vrPopupElsRef.current = null; }
+    };
+  }, [vrActive, viewerEpoch]);
 
   // Whether an audio track is available for the current viewpoint (its own or
   // the project's ambient one).
@@ -215,16 +301,10 @@ const SphereViewer: React.FC = () => {
   const [targetProjectTitle, setTargetProjectTitle] = useState<string | null>(null);
   const [fullscreenImageUrl, setFullscreenImageUrl] = useState<string | null>(null);
   const [fullscreenVideoUrl, setFullscreenVideoUrl] = useState<string | null>(null);
-  const [vrActive, setVrActive] = useState(false);
-  // Mirror of vrActive so callbacks created once (e.g. the navbar interval)
-  // can read the current VR state without re-subscribing.
-  const vrActiveRef = useRef(false);
-  vrActiveRef.current = vrActive;
 
   // Gaze interaction (VR / stereo mode only): a reticle at the centre of the
   // left eye fills up while the user keeps looking at a marker; once full it
   // triggers the same action as a click.
-  const [gazeProgress, setGazeProgress] = useState(0);
   const gazeTargetRef = useRef<string | null>(null);
   const gazeProgressRef = useRef(0);
 
@@ -251,7 +331,7 @@ const SphereViewer: React.FC = () => {
     if (!vrActive) {
       gazeTargetRef.current = null;
       gazeProgressRef.current = 0;
-      setGazeProgress(0);
+      updateReticles(0, false);
       for (const [, pair] of vrMarkerElsRef.current) {
         pair.left.remove();
         pair.right.remove();
@@ -276,6 +356,21 @@ const SphereViewer: React.FC = () => {
     // stereo both eyes look in the same direction, so comparing the view
     // position to each marker's yaw/pitch works for either eye.
     const CENTER_THRESHOLD = 0.14;
+
+    // Update the per-eye reticle charging rings (0..1) and show/hide them
+    // depending on whether a gaze target is currently held.
+    const RING_LEN = 2 * Math.PI * 28;
+    const updateReticles = (p: number, active: boolean) => {
+      const refs = vrReticleRefs.current;
+      const wraps = vrReticleWrapRef.current;
+      if (!refs || !wraps) return;
+      const offset = RING_LEN * (1 - p);
+      if (refs.left) refs.left.setAttribute('stroke-dashoffset', `${offset}`);
+      if (refs.right) refs.right.setAttribute('stroke-dashoffset', `${offset}`);
+      const disp = active ? 'block' : 'none';
+      wraps.left.style.display = disp;
+      wraps.right.style.display = disp;
+    };
 
     const angleDiff = (a: number, b: number) => {
       let d = a - b;
@@ -635,7 +730,7 @@ const SphereViewer: React.FC = () => {
         if (currentTarget !== null || currentProgress !== 0) {
           gazeTargetRef.current = null;
           gazeProgressRef.current = 0;
-          setGazeProgress(0);
+          updateReticles(0, false);
         }
         return;
       }
@@ -643,18 +738,18 @@ const SphereViewer: React.FC = () => {
       if (best.id !== currentTarget) {
         gazeTargetRef.current = best.id;
         gazeProgressRef.current = 0;
-        setGazeProgress(0);
+        updateReticles(0, false);
         return;
       }
 
       // Same target kept centred: charge.
       const next = Math.min(1, currentProgress + dt / GAZE_DURATION);
       gazeProgressRef.current = next;
-      setGazeProgress(next);
+      updateReticles(next, true);
       if (next >= 1) {
         gazeTargetRef.current = null;
         gazeProgressRef.current = 0;
-        setGazeProgress(0);
+        updateReticles(0, false);
         if (best.id === 'vr-close') {
           setOpenHotspotId(null);
         } else {
@@ -904,6 +999,7 @@ const SphereViewer: React.FC = () => {
 
     if (!viewerRef.current) {
       createViewer();
+      setViewerEpoch((e) => e + 1);
       return;
     }
 
@@ -928,6 +1024,7 @@ const SphereViewer: React.FC = () => {
       }
       createViewer();
       currentIsVideoRef.current = isVideo;
+      setViewerEpoch((e) => e + 1);
       vrEnabledRef.current = vrEnabled;
       setVrActive(false);
       return;
@@ -1516,62 +1613,6 @@ const SphereViewer: React.FC = () => {
           filter: isTransitioning ? 'brightness(0.7)' : 'brightness(1)',
         }}
       />
-
-      {/* VR dedicated interface (reticles + per-eye marker overlay). Rendered
-          through a portal INSIDE the PSV container so it stays visible while PSV
-          fullscreens that container in stereoscopic mode — a sibling outside it
-          would be clipped away. Position is absolute (relative to the container,
-          which fills the screen in fullscreen). */}
-      {vrActive && vrPortalEl && createPortal(
-        <>
-          {[25, 75].map((pct) => (
-            <div
-              key={pct}
-              style={{
-                position: 'absolute',
-                left: `${pct}%`,
-                top: '50%',
-                transform: 'translate(-50%, -50%)',
-                zIndex: 9991,
-                pointerEvents: 'none',
-                width: '64px',
-                height: '64px',
-              }}
-            >
-              <svg width="64" height="64" viewBox="0 0 64 64">
-                <circle
-                  cx="32" cy="32" r="28"
-                  fill="none"
-                  stroke="rgba(255,255,255,0.35)"
-                  strokeWidth="4"
-                />
-                <circle
-                  cx="32" cy="32" r="28"
-                  fill="none"
-                  stroke="#ffffff"
-                  strokeWidth="4"
-                  strokeLinecap="round"
-                  strokeDasharray={2 * Math.PI * 28}
-                  strokeDashoffset={2 * Math.PI * 28 * (1 - gazeProgress)}
-                  transform="rotate(-90 32 32)"
-                />
-                <circle cx="32" cy="32" r="3" fill="rgba(255,255,255,0.85)" />
-              </svg>
-            </div>
-          ))}
-          <div
-            ref={vrOverlayRef}
-            style={{
-              position: 'absolute',
-              inset: 0,
-              zIndex: 9990,
-              pointerEvents: 'none',
-              overflow: 'hidden',
-            }}
-          />
-        </>,
-        vrPortalEl
-      )}
 
       {/* Hidden audio element: plays the viewpoint/project ambient track */}
       <audio ref={audioRef} style={{ display: 'none' }} />

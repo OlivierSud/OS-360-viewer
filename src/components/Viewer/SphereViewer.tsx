@@ -27,6 +27,7 @@ const SphereViewer: React.FC = () => {
   const viewerRef = useRef<Viewer | null>(null);
   const currentIsVideoRef = useRef(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const navbarIntervalRef = useRef<number | null>(null);
   const addHotspotCursor = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Ctext x='16' y='22' text-anchor='middle' font-size='22'%3E%E2%AD%95%3C/text%3E%3C/svg%3E") 16 16, crosshair`;
 
   // Same pill button style as the map editor controls (Add 360 / Move)
@@ -248,7 +249,7 @@ const SphereViewer: React.FC = () => {
         container: containerRef.current,
         panorama: getPanorama(selectedScene),
         plugins,
-        navbar: true,
+        navbar: ['zoom', 'fullscreen'],
         ...(isCurrentVideo
           ? { adapter: [EquirectangularVideoAdapter, { muted: false, autoplay: true }] }
           : {}),
@@ -296,7 +297,8 @@ const SphereViewer: React.FC = () => {
       });
 
     // Keep the PSV navbar always visible (it is hidden by default and only
-    // revealed on tap). Re-apply on every scene load so it never gets hidden.
+    // revealed on tap, especially on touch devices). Continuously re-apply so
+    // PSV's own toggling (on tap) cannot hide it again.
     const showNavbar = () => {
       try {
         const navbar = containerRef.current?.querySelector('.psv-navbar') as HTMLElement | null;
@@ -315,8 +317,8 @@ const SphereViewer: React.FC = () => {
       setSceneLoading(false);
     });
     showNavbar();
-    window.setTimeout(showNavbar, 100);
-    window.setTimeout(showNavbar, 600);
+    const navbarInterval = window.setInterval(showNavbar, 500);
+    navbarIntervalRef.current = navbarInterval;
 
     const markersPlugin = viewerRef.current.getPlugin(MarkersPlugin) as any;
 
@@ -486,6 +488,16 @@ const SphereViewer: React.FC = () => {
           reveal();
         });
     }, 320);
+  }, [selectedScene?.image, selectedScene?.video, vrEnabled]);
+
+  // Clean up the navbar-visibility interval when the scene effect re-runs.
+  useEffect(() => {
+    return () => {
+      if (navbarIntervalRef.current) {
+        window.clearInterval(navbarIntervalRef.current);
+        navbarIntervalRef.current = null;
+      }
+    };
   }, [selectedScene?.image, selectedScene?.video, vrEnabled]);
 
   // Clean up the viewer only on component unmount

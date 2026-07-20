@@ -57,6 +57,10 @@ const SphereViewer: React.FC = () => {
   // can read the current VR state without re-subscribing.
   const vrActiveRef = useRef(false);
   vrActiveRef.current = vrActive;
+  // Set when the user explicitly quits VR via the icon, so the `stereo.isEnabled()`
+  // poll does not immediately re-engage the VR interface (the split view may have
+  // dropped mid-session while the plugin still reports enabled).
+  const vrManuallyQuitRef = useRef(false);
   const addHotspotCursor = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Ctext x='16' y='22' text-anchor='middle' font-size='22'%3E%E2%AD%95%3C/text%3E%3C/svg%3E") 16 16, crosshair`;
 
   // Same pill button style as the map editor controls (Add 360 / Move)
@@ -912,7 +916,7 @@ const SphereViewer: React.FC = () => {
     let vrPollTimer: number | undefined;
     const syncVr = () => {
       const stereo = viewerRef.current?.getPlugin('stereo') as any;
-      if (stereo?.isEnabled?.()) setVrActive(true);
+      if (stereo?.isEnabled?.() && !vrManuallyQuitRef.current) setVrActive(true);
     };
     vrPollTimer = window.setInterval(syncVr, 150);
     vrPollTimerRef.current = vrPollTimer;
@@ -1833,11 +1837,21 @@ const SphereViewer: React.FC = () => {
             // `stereo.isEnabled()` then keeps `vrActive` in sync with the real
             // stereo state afterwards.
             if (!vrActive) {
+              vrManuallyQuitRef.current = false;
               setVrActive(true);
               try { stereo.start?.(); } catch { /* ignore */ }
             } else {
+              vrManuallyQuitRef.current = true;
               setVrActive(false);
+              // Force the classic (non-split) panorama back: stereo.stop() only
+              // resets the renderer when its internal `isEnabled()` is true, but
+              // the split view can linger if the gyroscope/fullscreen dropped
+              // mid-session. Reset the custom renderer and exit fullscreen
+              // unconditionally so the user always returns to the normal view.
               try { stereo.stop?.(); } catch { /* ignore */ }
+              try { (v.renderer as any)?.setCustomRenderer?.(null); } catch { /* ignore */ }
+              try { v.exitFullscreen?.(); } catch { /* ignore */ }
+              try { stereo?.gyroscope?.stop?.(); } catch { /* ignore */ }
             }
           }}
           title={vrActive ? 'Quitter le mode VR' : 'Mode VR (casque cardboard)'}

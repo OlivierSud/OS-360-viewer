@@ -279,10 +279,15 @@ const SphereViewer: React.FC = () => {
         markers = markersPlugin.getMarkers?.() ?? [];
       } catch { /* ignore */ }
 
+      // PSV markers may expose their spherical position on `.position`, but some
+      // Marker instances only populate `config.position` / `state.position`. Read
+      // from all known locations so our VR overlay always finds the position.
+      const getMarkerPos = (m: any) => m?.position || m?.config?.position || m?.state?.position || null;
+
       // Update the per-eye VR overlays (kept in sync with PSV markers).
       const seen = new Set<string>();
       for (const m of markers) {
-        const pos = m.position;
+        const pos = getMarkerPos(m);
         if (!pos || typeof pos.yaw !== 'number' || typeof pos.pitch !== 'number') continue;
         // Only draw markers that are actually in front of the current view.
         let visible = true;
@@ -362,7 +367,7 @@ const SphereViewer: React.FC = () => {
 
       let best: { id: string; data: any; dist: number } | null = null;
       for (const m of markers) {
-        const pos = m.position;
+        const pos = getMarkerPos(m);
         if (!pos || typeof pos.yaw !== 'number' || typeof pos.pitch !== 'number') continue;
         const dyaw = angleDiff(view.yaw, pos.yaw);
         const dpitch = view.pitch - pos.pitch;
@@ -1467,13 +1472,20 @@ const SphereViewer: React.FC = () => {
             if (!v) return;
             const stereo = v.getPlugin('stereo') as any;
             if (!stereo) return;
-            // Let the StereoPlugin handle gyroscope + fullscreen + stereo render.
-            // The `stereo-updated` event drives `vrActive`, so the overlay and
-            // reticles only show once stereo is actually enabled.
+            // The StereoPlugin handles gyroscope + fullscreen + stereo render.
+            // Drive `vrActive` from the returned promise (the `stereo-updated`
+            // event is unreliable through the viewer event bus, so we don't
+            // depend on it). vrActive shows our per-eye overlay + reticles.
             if (!vrActive) {
-              try { stereo.start?.(); } catch { /* ignore */ }
+              try {
+                Promise.resolve(stereo.start?.()).then(
+                  () => setVrActive(true),
+                  () => setVrActive(false)
+                );
+              } catch { setVrActive(false); }
             } else {
               try { stereo.stop?.(); } catch { /* ignore */ }
+              setVrActive(false);
             }
           }}
           title={vrActive ? 'Quitter le mode VR' : 'Mode VR (casque cardboard)'}

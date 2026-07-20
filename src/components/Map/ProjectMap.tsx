@@ -5,6 +5,8 @@ import 'leaflet/dist/leaflet.css';
 import { useProjectStore } from '../../state/projectStore';
 import type { Scene } from '../../models/Scene';
 import { createTrackedObjectUrl } from '../../services/mediaRegistry';
+import PanoCapture from './PanoCapture';
+import PanoDesktopNotice from './PanoDesktopNotice';
 
 // In viewer mode the map is shown inside a circular minimap. To make the plan
 // fill that circle (instead of leaving empty margins in the corners), we fit
@@ -362,6 +364,14 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, mode: 
   const [linkStartSceneId, setLinkStartSceneId] = useState<string | null>(null);
   const [isDraggingAngle, setIsDraggingAngle] = useState(false);
   const [pendingPosition, setPendingPosition] = useState<{x: number, y: number} | null>(null);
+  const [isCreatingPano, setIsCreatingPano] = useState(false);
+  const [panoCapturePos, setPanoCapturePos] = useState<{x: number, y: number} | null>(null);
+  const [showPanoDesktopNotice, setShowPanoDesktopNotice] = useState(false);
+
+  // The 360° capture flow relies on a phone camera + gyroscope, so it is
+  // restricted to mobile devices. We treat anything without a mobile UA as desktop.
+  const isDesktop = typeof navigator !== 'undefined' &&
+    !/Mobi|Android|iPhone|iPad|iPod|Windows Phone/i.test(navigator.userAgent);
   const [travelPos, setTravelPos] = useState<[number, number] | null>(null);
   const prevSceneIdRef = useRef<string | null>(selectedSceneId);
   const firstFitRef = useRef(true);
@@ -434,6 +444,17 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, mode: 
       {/* Arrow pointing right */}
       <polyline points="16 17 21 12 16 7"/>
       <line x1="21" y1="12" x2="9" y2="12"/>
+    </svg>
+  );
+
+  const IconPano = () => (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      {/* 360 ring */}
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 3a9 9 0 0 1 0 18" opacity="0.5" />
+      {/* Camera aperture hint in the middle */}
+      <circle cx="12" cy="12" r="2.4" />
+      <path d="M12 9.6v4.8" />
     </svg>
   );
 
@@ -613,6 +634,10 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, mode: 
           addScene(newScene);
           selectScene(newScene.id);
           setIsPlacingProjectLink(false);
+        } else if (isCreatingPano) {
+          // Open the in-app 360° capture overlay at the clicked position.
+          setPanoCapturePos({ x: e.latlng.lng, y: e.latlng.lat });
+          setIsCreatingPano(false);
         }
       },
       mousedown(e) {
@@ -911,6 +936,14 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, mode: 
                 {isPlacingProjectLink ? <><IconCancel /> Cancel</> : <><IconPortal /> Add Portal</>}
               </button>
             )}
+            {!isMoving && !isRotating && !isLinking && !isPlacing && !isPlacingProjectLink && (
+              <button 
+                onClick={() => isDesktop ? setShowPanoDesktopNotice(true) : setIsCreatingPano(!isCreatingPano)}
+                style={mapControlButtonStyle(isCreatingPano, '#d32f2f', '#6a3df2')}
+              >
+                {isCreatingPano ? <><IconCancel /> Cancel</> : <><IconPano /> Create Panorama</>}
+              </button>
+            )}
             {!isPlacing && !isPlacingProjectLink && !isRotating && !isLinking && (
               <button 
                 onClick={() => setIsMoving(!isMoving)}
@@ -1126,6 +1159,14 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, mode: 
                 {isPlacingProjectLink ? <><IconCancel /> Cancel</> : <><IconPortal /> Add Portal</>}
               </button>
             )}
+            {!isMoving && !isRotating && !isLinking && !isPlacing && !isPlacingProjectLink && (
+              <button 
+                onClick={() => isDesktop ? setShowPanoDesktopNotice(true) : setIsCreatingPano(!isCreatingPano)}
+                style={mapControlButtonStyle(isCreatingPano, '#d32f2f', '#6a3df2')}
+              >
+                {isCreatingPano ? <><IconCancel /> Cancel</> : <><IconPano /> Create Panorama</>}
+              </button>
+            )}
             {!isPlacing && !isPlacingProjectLink && !isRotating && !isLinking && (
               <button 
                 onClick={() => setIsMoving(!isMoving)}
@@ -1257,6 +1298,35 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, mode: 
             Aucun plan disponible pour cette visite.
           </div>
         )
+        )}
+      {panoCapturePos && (
+        <PanoCapture
+          position={panoCapturePos}
+          onCancel={() => setPanoCapturePos(null)}
+          onComplete={(blob) => {
+            const url = createTrackedObjectUrl(new File([blob], `pano_${Date.now()}.jpg`, { type: 'image/jpeg' }));
+            const sceneId = `scene_${Date.now()}`;
+            const newScene: Scene = {
+              id: sceneId,
+              title: `Panorama ${new Date().toLocaleTimeString()}`,
+              image: url,
+              thumbnail: url,
+              position: panoCapturePos,
+              north: 0,
+              links: [],
+              hotspots: []
+            };
+            addScene(newScene);
+            selectScene(newScene.id);
+            setPanoCapturePos(null);
+          }}
+        />
+      )}
+      {showPanoDesktopNotice && (
+        <PanoDesktopNotice
+          url={window.location.href}
+          onClose={() => setShowPanoDesktopNotice(false)}
+        />
       )}
     </div>
   );

@@ -262,6 +262,16 @@
     z-index: 2100 !important;
   }
 
+  /* Landscape phones: the system navigation bar sits on the side, so the
+     bottom-right corner is hidden. Move the VR button to the bottom-left. */
+  @media (orientation: landscape) {
+    .viewer-vr-button {
+      right: auto !important;
+      left: 15px !important;
+      bottom: 15px !important;
+    }
+  }
+
   /* Project selection screen */
   .selection-screen {
     padding: 16px;

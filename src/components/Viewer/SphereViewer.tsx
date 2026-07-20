@@ -31,6 +31,9 @@ const SphereViewer: React.FC = () => {
   const navbarIntervalRef = useRef<number | null>(null);
   const vrOverlayRef = useRef<HTMLDivElement | null>(null);
   const vrMarkerElsRef = useRef<Map<string, { left: HTMLDivElement; right: HTMLDivElement }>>(new Map());
+  // Per-eye "close" targeting points (✕) shown in VR when a hotspot popup is open,
+  // so the user can gaze at the cross to dismiss the popup.
+  const vrCloseElsRef = useRef<{ left: HTMLDivElement; right: HTMLDivElement } | null>(null);
   const vrPollTimerRef = useRef<number | undefined>(undefined);
   // The PSV container is the element PSV fullscreens in VR. Our VR overlay and
   // reticles must live INSIDE it (via a portal) so they remain visible while
@@ -200,6 +203,10 @@ const SphereViewer: React.FC = () => {
 
   // Which hotspot popup is currently open (rendered as an in-sphere marker)
   const [openHotspotId, setOpenHotspotId] = useState<string | null>(null);
+  // Mirror of openHotspotId so the VR gaze loop (which only depends on vrActive)
+  // can read the current open popup without re-subscribing every render.
+  const openHotspotIdRef = useRef<string | null>(null);
+  openHotspotIdRef.current = openHotspotId;
   const [panoramaError, setPanoramaError] = useState<string | null>(null);
   const [targetProjectTitle, setTargetProjectTitle] = useState<string | null>(null);
   const [fullscreenImageUrl, setFullscreenImageUrl] = useState<string | null>(null);
@@ -242,6 +249,11 @@ const SphereViewer: React.FC = () => {
         pair.right.remove();
       }
       vrMarkerElsRef.current.clear();
+      if (vrCloseElsRef.current) {
+        vrCloseElsRef.current.left.remove();
+        vrCloseElsRef.current.right.remove();
+        vrCloseElsRef.current = null;
+      }
       return;
     }
     let raf = 0;
@@ -377,6 +389,80 @@ const SphereViewer: React.FC = () => {
         }
       }
 
+      // --- VR "close popup" targeting point (✕) ---
+      // When a hotspot popup is open in VR, draw a cross the user can gaze at to
+      // dismiss it. It is anchored to a FIXED screen position (bottom-centre of
+      // the overlay) projected back to spherical coords so it sits correctly in
+      // each eye. We keep it out of `seen` (it is not a PSV marker).
+      const openId = openHotspotIdRef.current;
+      // Spherical position of the VR "close popup" cross (recomputed each frame;
+      // declared here so it is also visible to the gaze-target selection below).
+      let closePos: any = null;
+      if (openId) {
+        const closeScreenX = Wov / 2;
+        const closeScreenY = Hov * 0.80;
+        try {
+          closePos = v.dataHelper.viewerCoordsToSphericalCoords({ x: closeScreenX, y: closeScreenY });
+        } catch { closePos = null; }
+        if (!vrCloseElsRef.current) {
+          const makeClose = () => {
+            const el = document.createElement('div');
+            el.style.position = 'absolute';
+            el.style.transform = 'translate(-50%, -50%)';
+            el.style.pointerEvents = 'none';
+            el.style.display = 'none';
+            el.style.alignItems = 'center';
+            el.style.justifyContent = 'center';
+            el.style.width = '46px';
+            el.style.height = '46px';
+            el.style.borderRadius = '50%';
+            el.style.border = '3px solid #ff5252';
+            el.style.background = 'rgba(0,0,0,0.55)';
+            el.style.color = '#ff5252';
+            el.style.fontSize = '24px';
+            el.style.fontWeight = '700';
+            el.style.zIndex = '1360';
+            el.style.boxShadow = '0 0 12px rgba(0,0,0,0.7)';
+            overlay.appendChild(el);
+            return el;
+          };
+          vrCloseElsRef.current = { left: makeClose(), right: makeClose() };
+        }
+        const closeEls = vrCloseElsRef.current;
+        if (closePos && typeof closePos.yaw === 'number') {
+          const screenC = v.dataHelper.sphericalCoordsToViewerCoords(closePos);
+          if (screenC && Number.isFinite(screenC.x) && Number.isFinite(screenC.y)) {
+            const fxc = screenC.x / Wsrc;
+            const fyc = screenC.y / Hsrc;
+            const leftXc = (fxc - 0.25) * Wov;
+            const rightXc = (fxc + 0.25) * Wov;
+            const yc = fyc * Hov;
+            let visibleC = true;
+            try { visibleC = Boolean(v.dataHelper.isPointVisible(closePos)); } catch { visibleC = true; }
+            const leftVisC = visibleC && leftXc >= 0 && leftXc <= halfW;
+            const rightVisC = visibleC && rightXc >= halfW && rightXc <= Wov;
+            closeEls.left.textContent = '✕';
+            closeEls.right.textContent = '✕';
+            closeEls.left.style.left = `${leftXc}px`;
+            closeEls.left.style.top = `${yc}px`;
+            closeEls.right.style.left = `${rightXc}px`;
+            closeEls.right.style.top = `${yc}px`;
+            closeEls.left.style.display = leftVisC ? 'flex' : 'none';
+            closeEls.right.style.display = rightVisC ? 'flex' : 'none';
+          } else {
+            closeEls.left.style.display = 'none';
+            closeEls.right.style.display = 'none';
+          }
+        } else {
+          closeEls.left.style.display = 'none';
+          closeEls.right.style.display = 'none';
+        }
+      } else if (vrCloseElsRef.current) {
+        vrCloseElsRef.current.left.remove();
+        vrCloseElsRef.current.right.remove();
+        vrCloseElsRef.current = null;
+      }
+
       let best: { id: string; data: any; dist: number } | null = null;
       for (const m of markers) {
         const pos = getMarkerPos(m);
@@ -386,6 +472,16 @@ const SphereViewer: React.FC = () => {
         const dist = Math.hypot(dyaw, dpitch);
         if (dist < CENTER_THRESHOLD && (!best || dist < best.dist)) {
           best = { id: m.id, data: m.data ?? {}, dist };
+        }
+      }
+
+      // The VR "close popup" cross is also a gaze target when a popup is open.
+      if (openId && closePos && typeof closePos.yaw === 'number') {
+        const dyaw = angleDiff(view.yaw, closePos.yaw);
+        const dpitch = view.pitch - closePos.pitch;
+        const dist = Math.hypot(dyaw, dpitch);
+        if (dist < CENTER_THRESHOLD && (!best || dist < best.dist)) {
+          best = { id: 'vr-close', data: {}, dist };
         }
       }
 
@@ -414,16 +510,34 @@ const SphereViewer: React.FC = () => {
       gazeProgressRef.current = next;
       setGazeProgress(next);
       if (next >= 1) {
-        const data = best.data;
         gazeTargetRef.current = null;
         gazeProgressRef.current = 0;
         setGazeProgress(0);
-        triggerMarker(data);
+        if (best.id === 'vr-close') {
+          setOpenHotspotId(null);
+        } else {
+          triggerMarker(best.data);
+        }
       }
     };
 
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
+  }, [vrActive]);
+
+  // In VR, the normal PSV markers (the blue hotspot dots / white link arrows of
+  // the standard interface) must NOT be visible — only our per-eye targeting
+  // points are. The stereo plugin already hides markers on start(), but we
+  // reinforce it here so they can never bleed through during the transition.
+  React.useEffect(() => {
+    if (!viewerRef.current) return;
+    const markersPlugin = viewerRef.current.getPlugin(MarkersPlugin) as any;
+    if (!markersPlugin) return;
+    if (vrActive) {
+      try { markersPlugin.hideAllMarkers(); } catch { /* ignore */ }
+    } else {
+      try { markersPlugin.showAllMarkers(); } catch { /* ignore */ }
+    }
   }, [vrActive]);
 
 
@@ -1298,6 +1412,63 @@ const SphereViewer: React.FC = () => {
               overflow: 'hidden',
             }}
           />
+
+          {/* VR hotspot popup: the PSV marker popup is hidden by the stereo
+              plugin in VR, so we render our own read-only card here. The close
+              action is performed by the ✕ targeting point (handled in the gaze
+              loop), not by a click — hence pointerEvents:none. */}
+          {openHotspotId && vrActive && (() => {
+            const hs = selectedScene?.hotspots?.find((h) => h.id === openHotspotId);
+            if (!hs) return null;
+            const isImage = hs.type === 'image' && hs.content;
+            const isVideo = hs.type === 'video';
+            const safe = hs.content
+              ? hs.content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+              : '';
+            const title = hs.title
+              ? hs.title
+              : (isVideo ? '🎥 Vidéo' : isImage ? '🖼️ Image' : 'ℹ️ Info');
+            return (
+              <div
+                style={{
+                  position: 'absolute',
+                  left: '50%',
+                  top: '40%',
+                  transform: 'translate(-50%, -50%)',
+                  width: 'min(320px, 80vw)',
+                  maxHeight: '58vh',
+                  overflow: 'auto',
+                  background: 'rgba(14,14,16,0.92)',
+                  backdropFilter: 'blur(12px)',
+                  WebkitBackdropFilter: 'blur(12px)',
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  borderRadius: '12px',
+                  padding: '12px 14px',
+                  color: 'white',
+                  zIndex: 1358,
+                  pointerEvents: 'none',
+                  fontFamily: 'system-ui, sans-serif',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
+                  boxShadow: '0 8px 28px rgba(0,0,0,0.65)',
+                }}
+              >
+                <div style={{ fontSize: '0.95rem', fontWeight: 600 }}>{title}</div>
+                {isImage ? (
+                  <img
+                    src={hs.content}
+                    alt=""
+                    style={{ width: '100%', maxHeight: '200px', objectFit: 'contain', borderRadius: '6px', background: '#111', display: 'block' }}
+                  />
+                ) : hs.content ? (
+                  <p style={{ margin: 0, fontSize: '0.88rem', lineHeight: 1.55, whiteSpace: 'pre-wrap', color: '#ddd' }}>{safe}</p>
+                ) : (
+                  <p style={{ margin: 0, fontSize: '0.82rem', color: '#888', fontStyle: 'italic' }}>Aucun contenu configuré.</p>
+                )}
+              </div>
+            );
+          })()}
         </>,
         vrPortalEl
       )}

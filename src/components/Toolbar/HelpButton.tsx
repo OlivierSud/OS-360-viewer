@@ -271,33 +271,42 @@ const HelpButton: React.FC = () => {
                 Scannez avec votre téléphone (même réseau Wi-Fi) pour ouvrir directement
                 le projet ouvert dans l'éditeur ou la visionneuse.
               </p>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-                <label style={{ fontSize: '0.8rem', color: '#cfcfcf' }}>IP locale du PC :</label>
-                <input
-                  type="text"
-                  value={lanIp ?? ''}
-                  placeholder="ex: 192.168.1.42"
-                  onChange={(e) => setLanIp(e.target.value.trim() || undefined)}
-                  style={{
-                    flex: 1,
-                    maxWidth: '200px',
-                    background: '#1e1e1e',
-                    color: '#eee',
-                    border: '1px solid #444',
-                    borderRadius: '4px',
-                    padding: '4px 8px',
-                    fontSize: '0.8rem',
-                    fontFamily: 'monospace',
-                  }}
-                />
-              </div>
+              {(() => {
+                const isLocal = typeof window !== 'undefined' &&
+                  (window.location.hostname === 'localhost' ||
+                   window.location.hostname === '127.0.0.1' ||
+                   window.location.hostname === '[::1]');
+                return isLocal ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                    <label style={{ fontSize: '0.8rem', color: '#cfcfcf' }}>IP locale du PC :</label>
+                    <input
+                      type="text"
+                      value={lanIp ?? ''}
+                      placeholder="ex: 192.168.1.42"
+                      onChange={(e) => setLanIp(e.target.value.trim() || undefined)}
+                      style={{
+                        flex: 1,
+                        maxWidth: '200px',
+                        background: '#1e1e1e',
+                        color: '#eee',
+                        border: '1px solid #444',
+                        borderRadius: '4px',
+                        padding: '4px 8px',
+                        fontSize: '0.8rem',
+                        fontFamily: 'monospace',
+                      }}
+                    />
+                  </div>
+                ) : null;
+              })()}
               {viewerUrl ? (
                 (() => {
                   const base = import.meta.env.BASE_URL.endsWith('/')
                     ? import.meta.env.BASE_URL
                     : `${import.meta.env.BASE_URL}/`;
                   let origin = typeof window !== 'undefined' ? window.location.origin : '';
-                  if (lanIp && /^(\d{1,3}\.){3}\d{1,3}$/.test(lanIp)) {
+                  const isLocal = origin.includes('localhost') || origin.includes('127.0.0.1') || origin.includes('[::1]');
+                  if (isLocal && lanIp && /^(\d{1,3}\.){3}\d{1,3}$/.test(lanIp)) {
                     try {
                       const u = new URL(origin);
                       origin = `${u.protocol}//${lanIp}:${u.port}`;

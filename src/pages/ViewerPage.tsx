@@ -5,6 +5,7 @@ import { useProjectStore } from '../state/projectStore';
 import SphereViewer from '../components/Viewer/SphereViewer';
 import PasswordGate from '../components/Viewer/PasswordGate';
 import ProjectMap from '../components/Map/ProjectMap';
+import ViewerErrorBoundary from '../components/Viewer/ViewerErrorBoundary';
 import { loadCloudProject } from '../services/cloudflareApi';
 import { getAccentColor, darkenHex } from '../utils/theme';
 
@@ -121,7 +122,9 @@ const ViewerPage: React.FC = () => {
     <div className="viewer-layout" style={{ position: 'relative', overflow: 'hidden' }}>
       {/* Fullscreen 360 viewer */}
       <div style={{ position: 'absolute', inset: 0, backgroundColor: '#000' }}>
-        <SphereViewer />
+        <ViewerErrorBoundary>
+          <SphereViewer />
+        </ViewerErrorBoundary>
       </div>
 
       {/* Title overlay */}

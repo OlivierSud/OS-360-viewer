@@ -135,6 +135,20 @@ const SphereViewer: React.FC = () => {
   const vrEnabled = mode === 'viewer' && Boolean(project?.project?.enableVR);
   const vrEnabledRef = useRef(vrEnabled);
 
+  // VR button is only relevant on mobile devices (where a cardboard/gyroscope
+  // experience makes sense). Detect once and keep it in sync with viewport.
+  const [isMobile, setIsMobile] = useState<boolean>(
+    typeof window !== 'undefined' &&
+      window.matchMedia('(max-width: 768px), (pointer: coarse)').matches
+  );
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(max-width: 768px), (pointer: coarse)');
+    const onChange = () => setIsMobile(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
   // Whether an audio track is available for the current viewpoint (its own or
   // the project's ambient one).
   const hasAudio = Boolean(selectedScene?.audio || project?.project?.audio);
@@ -1150,8 +1164,8 @@ const SphereViewer: React.FC = () => {
         </div>
       )}
 
-      {/* VR button (mobile): start the stereoscopic + gyroscope experience */}
-      {vrEnabled && (
+      {/* VR button (mobile only): start the stereoscopic + gyroscope experience */}
+      {vrEnabled && isMobile && (
         <button
           onClick={() => {
             const v = viewerRef.current;

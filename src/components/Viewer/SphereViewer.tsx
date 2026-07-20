@@ -260,15 +260,19 @@ const SphereViewer: React.FC = () => {
       const view = v.getPosition?.() as { yaw: number; pitch: number } | undefined;
       if (!view) return;
 
-      // Use PSV's own authoritative size (the size its renderer/camera use) so
-      // our overlay coordinates match exactly what PSV draws. This is the same
-      // space returned by sphericalCoordsToViewerCoords (mono screen coords).
+      // Use PSV's own size (the space sphericalCoordsToViewerCoords returns) as
+      // the SOURCE, but position children in the OVERLAY element's own measured
+      // pixel space (which may differ in fullscreen / DPR). Normalise to a
+      // fraction of the source size, then map into the overlay size.
       const st: any = (v as any).state ?? {};
       const size: any = st.size ?? {};
-      const W = (typeof size.width === 'number' && size.width > 0)
-        ? size.width
-        : (window.innerWidth || container.clientWidth || 1);
-      const halfW = W / 2;
+      const Wsrc = (typeof size.width === 'number' && size.width > 0)
+        ? size.width : (window.innerWidth || container.clientWidth || 1);
+      const Hsrc = (typeof size.height === 'number' && size.height > 0)
+        ? size.height : (window.innerHeight || container.clientHeight || 1);
+      const Wov = overlay.clientWidth || Wsrc;
+      const Hov = overlay.clientHeight || Hsrc;
+      const halfW = Wov / 2;
 
       let markers: any[] = [];
       try {
@@ -296,11 +300,15 @@ const SphereViewer: React.FC = () => {
         // state.size, the same space PSV renders into).
         const screen = v.dataHelper.sphericalCoordsToViewerCoords(pos);
         if (!screen || !Number.isFinite(screen.x) || !Number.isFinite(screen.y)) continue;
-        // In stereo each eye shows half the horizontal FOV. The mono screen-x X
-        // maps to the left eye at X - W/4 and the right eye at X + W/4 (same y).
-        const leftX = screen.x - W / 4;
-        const rightX = screen.x + W / 4;
-        const y = screen.y;
+        // Normalise the mono screen coords to [0,1] fractions, then map into the
+        // overlay's own pixel space. In stereo each eye shows half the horizontal
+        // FOV, so the mono fraction fx maps to the left eye at fx - 1/4 and the
+        // right eye at fx + 1/4 (each eye is half width, centred at 1/4 / 3/4).
+        const fx = screen.x / Wsrc;
+        const fy = screen.y / Hsrc;
+        const leftX = (fx - 0.25) * Wov;
+        const rightX = (fx + 0.25) * Wov;
+        const y = fy * Hov;
         if (!Number.isFinite(leftX)) continue;
         seen.add(m.id);
         let pair = vrMarkerElsRef.current.get(m.id);
@@ -335,7 +343,7 @@ const SphereViewer: React.FC = () => {
         // A marker is only drawn in an eye if it falls inside that eye's half of
         // the screen (each eye sees half the horizontal FOV).
         const leftVisible = visible && leftX >= 0 && leftX <= halfW;
-        const rightVisible = visible && rightX >= halfW && rightX <= W;
+        const rightVisible = visible && rightX >= halfW && rightX <= Wov;
         pair.left.style.left = `${leftX}px`;
         pair.left.style.top = `${y}px`;
         pair.right.style.left = `${rightX}px`;

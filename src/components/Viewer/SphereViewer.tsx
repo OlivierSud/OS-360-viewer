@@ -260,25 +260,15 @@ const SphereViewer: React.FC = () => {
       const view = v.getPosition?.() as { yaw: number; pitch: number } | undefined;
       if (!view) return;
 
-      // In stereo the panorama is rendered twice, each eye filling one half of
-      // the (full-screen) viewport. Use the viewport size (not the container,
-      // which can report 0 in fullscreen) so the per-eye split is correct.
-      const cw = window.innerWidth || container.clientWidth || 1;
-      const ch = window.innerHeight || container.clientHeight || 1;
-
-      // Per-eye projection. The three.js StereoCamera halves the eye aspect, so
-      // each eye shows HALF the mono horizontal FOV compressed into its half of
-      // the screen. A marker at angular offset (dyaw, dpitch) from the view
-      // centre therefore lands at (within the full-canvas coords):
-      //   eyeX = eyeCentreX + cw * (dyaw / hFov)
-      //   eyeY = ch/2        - ch * (dpitch / vFov)
-      // with eyeCentreX = cw/4 (left) or 3cw/4 (right). This is equivalent to
-      // taking the mono screen-x X and using X - cw/4 / X + cw/4.
+      // Use PSV's own authoritative size (the size its renderer/camera use) so
+      // our overlay coordinates match exactly what PSV draws. This is the same
+      // space returned by sphericalCoordsToViewerCoords (mono screen coords).
       const st: any = (v as any).state ?? {};
-      const hFov = (typeof st.hFov === 'number' && st.hFov > 0) ? st.hFov : Math.PI / 2;
-      const vFov = (typeof st.vFov === 'number' && st.vFov > 0) ? st.vFov : Math.PI / 2;
-      const eyeCenterL = cw / 4;
-      const eyeCenterR = (3 * cw) / 4;
+      const size: any = st.size ?? {};
+      const W = (typeof size.width === 'number' && size.width > 0)
+        ? size.width
+        : (window.innerWidth || container.clientWidth || 1);
+      const halfW = W / 2;
 
       let markers: any[] = [];
       try {
@@ -302,14 +292,16 @@ const SphereViewer: React.FC = () => {
           seen.add(m.id);
           continue;
         }
-        const dyaw = angleDiff(pos.yaw, view.yaw);
-        const dpitch = pos.pitch - view.pitch;
-        const xOff = cw * (dyaw / hFov);
-        const yOff = ch * (dpitch / vFov);
-        const leftX = eyeCenterL + xOff;
-        const rightX = eyeCenterR + xOff;
-        const y = ch / 2 - yOff;
-        if (!Number.isFinite(leftX) || !Number.isFinite(y)) continue;
+        // Mono screen coords from PSV's own helper (uses the main camera +
+        // state.size, the same space PSV renders into).
+        const screen = v.dataHelper.sphericalCoordsToViewerCoords(pos);
+        if (!screen || !Number.isFinite(screen.x) || !Number.isFinite(screen.y)) continue;
+        // In stereo each eye shows half the horizontal FOV. The mono screen-x X
+        // maps to the left eye at X - W/4 and the right eye at X + W/4 (same y).
+        const leftX = screen.x - W / 4;
+        const rightX = screen.x + W / 4;
+        const y = screen.y;
+        if (!Number.isFinite(leftX)) continue;
         seen.add(m.id);
         let pair = vrMarkerElsRef.current.get(m.id);
         if (!pair) {
@@ -342,8 +334,8 @@ const SphereViewer: React.FC = () => {
         pair.right.textContent = glyph;
         // A marker is only drawn in an eye if it falls inside that eye's half of
         // the screen (each eye sees half the horizontal FOV).
-        const leftVisible = visible && leftX >= 0 && leftX <= cw / 2;
-        const rightVisible = visible && rightX >= cw / 2 && rightX <= cw;
+        const leftVisible = visible && leftX >= 0 && leftX <= halfW;
+        const rightVisible = visible && rightX >= halfW && rightX <= W;
         pair.left.style.left = `${leftX}px`;
         pair.left.style.top = `${y}px`;
         pair.right.style.left = `${rightX}px`;

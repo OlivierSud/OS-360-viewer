@@ -262,12 +262,14 @@
     z-index: 2100 !important;
   }
 
-  /* Viewer control bar (PSV navbar) must stay visible on mobile landscape */
+  /* Viewer control bar (PSV navbar) must stay visible on mobile (it is hidden
+     by default and only revealed on tap). Force it to always show. */
   .psv-navbar,
   .viewer-controls {
     display: flex !important;
     visibility: visible !important;
     opacity: 1 !important;
+    bottom: 0 !important;
   }
 
   /* Project selection screen */

@@ -43,9 +43,17 @@ const FitBounds: React.FC<{ bounds: L.LatLngBoundsExpression; firstFitRef: React
       }
     };
     map.whenReady(apply);
+    // On mobile the container size changes after mount (dynamic address bar,
+    // 50/50 split). If the map was fitted while its size was 0, the plan ends
+    // up off-screen (grey area). Re-fit once the real size is known.
+    const refit = () => { map.invalidateSize(); apply(); };
+    const ro = new ResizeObserver(() => refit());
+    if (map.getContainer().parentElement) ro.observe(map.getContainer().parentElement);
+    const t = setTimeout(refit, 300);
     // In viewer mode after the first load, do NOT refit: the map is recentered
     // on the starting viewpoint by RecenterOnProjectChange when the project
     // changes (e.g. via a Portal). We only keep the zoom bounds up to date.
+    return () => { clearTimeout(t); ro.disconnect(); };
   }, [map, bounds, firstFitRef, mode]);
   return null;
 };
@@ -53,58 +61,63 @@ const FitBounds: React.FC<{ bounds: L.LatLngBoundsExpression; firstFitRef: React
 const FitGeoBounds: React.FC<{ scenes: Scene[]; firstFitRef: React.MutableRefObject<boolean>; mode?: 'editor' | 'viewer' }> = ({ scenes, firstFitRef, mode }) => {
   const map = useMap();
   useEffect(() => {
-    if (scenes.length === 0) {
-      map.setMinZoom(1);
-      map.setMaxZoom(18);
-      return;
-    }
+    const applyFit = () => {
+      if (scenes.length === 0) {
+        map.setMinZoom(1);
+        map.setMaxZoom(18);
+        return;
+      }
 
-    const lats = scenes.map(s => s.position.y);
-    const lons = scenes.map(s => s.position.x);
-    
-    const minLat = Math.min(...lats);
-    const maxLat = Math.max(...lats);
-    const minLon = Math.min(...lons);
-    const maxLon = Math.max(...lons);
+      const lats = scenes.map(s => s.position.y);
+      const lons = scenes.map(s => s.position.x);
 
-    // If there is only one viewpoint, or all viewpoints are at the same spot
-    if (minLat === maxLat && minLon === maxLon) {
-      map.setMinZoom(8);
-      map.setMaxZoom(17);
+      const minLat = Math.min(...lats);
+      const maxLat = Math.max(...lats);
+      const minLon = Math.min(...lons);
+      const maxLon = Math.max(...lons);
+
+      // If there is only one viewpoint, or all viewpoints are at the same spot
+      if (minLat === maxLat && minLon === maxLon) {
+        map.setMinZoom(8);
+        map.setMaxZoom(17);
+        if (firstFitRef.current || mode === 'editor') {
+          firstFitRef.current = false;
+          const z = mode === 'viewer' ? 12 : 15;
+          map.setView([minLat, minLon], z);
+        }
+        return;
+      }
+
+      const bounds = L.latLngBounds([minLat, minLon], [maxLat, maxLon]);
+      const fitZoom = map.getBoundsZoom(bounds, false, mode === 'viewer' ? circlePadding(map) : L.point(50, 50));
+      // Allow zooming out 5 levels further than the viewpoints bounds for geographic map
+      const minZoomLevel = Math.max(1, fitZoom - 5);
+      // Don't zoom in closer than fitZoom + 2, cap at 17 to prevent zooming into empty space
+      const maxZoomLevel = Math.min(17, Math.max(12, fitZoom + 2));
+
+      map.setMinZoom(minZoomLevel);
+      map.setMaxZoom(maxZoomLevel);
+
       if (firstFitRef.current || mode === 'editor') {
         firstFitRef.current = false;
-        const z = mode === 'viewer' ? 12 : 15;
-        // Defer in viewer mode so it overrides the initial MapContainer fit.
-        if (mode === 'viewer') setTimeout(() => map.setView([minLat, minLon], z), 0);
-        else map.setView([minLat, minLon], z);
+        if (mode === 'viewer') {
+          map.setView(bounds.getCenter(), minZoomLevel);
+        } else {
+          // Editor: always start fitted perfectly to the container bounds
+          map.setView(bounds.getCenter(), fitZoom);
+        }
       }
-      return;
-    }
+    };
 
-    const bounds = L.latLngBounds([minLat, minLon], [maxLat, maxLon]);
-    const fitZoom = map.getBoundsZoom(bounds, false, mode === 'viewer' ? circlePadding(map) : L.point(50, 50));
-    // Allow zooming out 5 levels further than the viewpoints bounds for geographic map
-    const minZoomLevel = Math.max(1, fitZoom - 5);
-    // Don't zoom in closer than fitZoom + 2, cap at 17 to prevent zooming into empty space
-    const maxZoomLevel = Math.min(17, Math.max(12, fitZoom + 2));
-
-    map.setMinZoom(minZoomLevel);
-    map.setMaxZoom(maxZoomLevel);
-
-    if (firstFitRef.current || mode === 'editor') {
-      firstFitRef.current = false;
-      if (mode === 'viewer') {
-        // In the viewer, start fully zoomed-out so the whole map is visible
-        // at launch (the user can then zoom in from the minimap controls).
-        // Defer so it overrides the initial fit applied by the MapContainer's
-        // `bounds` prop (its mount effect runs after this child effect).
-        setTimeout(() => map.setView(bounds.getCenter(), minZoomLevel), 0);
-      } else {
-        // Editor: always start fitted perfectly to the container bounds
-        map.setView(bounds.getCenter(), fitZoom);
-      }
-    }
-  }, [map, scenes, firstFitRef]);
+    map.whenReady(applyFit);
+    // On mobile the container size changes after mount (dynamic address bar,
+    // 50/50 split). Re-fit once the real size is known so the map isn't grey.
+    const refit = () => { map.invalidateSize(); applyFit(); };
+    const ro = new ResizeObserver(() => refit());
+    if (map.getContainer().parentElement) ro.observe(map.getContainer().parentElement);
+    const t = setTimeout(refit, 300);
+    return () => { clearTimeout(t); ro.disconnect(); };
+  }, [map, scenes, firstFitRef, mode]);
   return null;
 };
 
@@ -112,6 +125,29 @@ const MapRefBridge: React.FC<{ mapRef: React.MutableRefObject<L.Map | null> }> =
   mapRef.current = useMap();
   return null;
 };
+
+// Leaflet caches the map size at init. On mobile the container size changes
+// after mount (dynamic address bar, 50/50 split, layout toggle), which leaves
+// the map grey. This keeps Leaflet's size in sync with its container.
+const KeepMapSize: React.FC = () => {
+  const map = useMap();
+  useEffect(() => {
+    const fix = () => map.invalidateSize();
+    const timers = [0, 150, 400, 800].map((d) => setTimeout(fix, d));
+    window.addEventListener('resize', fix);
+    window.addEventListener('orientationchange', fix);
+    const ro = new ResizeObserver(fix);
+    if (map.getContainer().parentElement) ro.observe(map.getContainer().parentElement);
+    return () => {
+      timers.forEach(clearTimeout);
+      window.removeEventListener('resize', fix);
+      window.removeEventListener('orientationchange', fix);
+      ro.disconnect();
+    };
+  }, [map]);
+  return null;
+};
+
 
 const CenterOnSelected: React.FC = () => {
   const map = useMap();
@@ -814,6 +850,7 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, mode: 
             zoomControl={!hideZoomControl}
           >
             {mapRef && <MapRefBridge mapRef={mapRef} />}
+            <KeepMapSize />
             <MapEvents />
             <FitBounds bounds={bounds} firstFitRef={firstFitRef} mode={modeProp} />
             <CenterOnSelected />
@@ -1036,6 +1073,7 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, mode: 
             zoomControl={!hideZoomControl}
           >
             {mapRef && <MapRefBridge mapRef={mapRef} />}
+            <KeepMapSize />
             <MapEvents />
             <FitGeoBounds scenes={scenes} firstFitRef={firstFitRef} mode={modeProp} />
             <CenterOnSelected />

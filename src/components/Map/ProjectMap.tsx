@@ -48,7 +48,8 @@ const FitBounds: React.FC<{ bounds: L.LatLngBoundsExpression; firstFitRef: React
     // up off-screen (grey area). Re-fit once the real size is known.
     const refit = () => { map.invalidateSize(); apply(); };
     const ro = new ResizeObserver(() => refit());
-    if (map.getContainer().parentElement) ro.observe(map.getContainer().parentElement);
+    const parent = map.getContainer().parentElement;
+    if (parent) ro.observe(parent);
     const t = setTimeout(refit, 300);
     // In viewer mode after the first load, do NOT refit: the map is recentered
     // on the starting viewpoint by RecenterOnProjectChange when the project
@@ -114,7 +115,8 @@ const FitGeoBounds: React.FC<{ scenes: Scene[]; firstFitRef: React.MutableRefObj
     // 50/50 split). Re-fit once the real size is known so the map isn't grey.
     const refit = () => { map.invalidateSize(); applyFit(); };
     const ro = new ResizeObserver(() => refit());
-    if (map.getContainer().parentElement) ro.observe(map.getContainer().parentElement);
+    const parent = map.getContainer().parentElement;
+    if (parent) ro.observe(parent);
     const t = setTimeout(refit, 300);
     return () => { clearTimeout(t); ro.disconnect(); };
   }, [map, scenes, firstFitRef, mode]);
@@ -137,7 +139,8 @@ const KeepMapSize: React.FC = () => {
     window.addEventListener('resize', fix);
     window.addEventListener('orientationchange', fix);
     const ro = new ResizeObserver(fix);
-    if (map.getContainer().parentElement) ro.observe(map.getContainer().parentElement);
+    const parent = map.getContainer().parentElement;
+    if (parent) ro.observe(parent);
     return () => {
       timers.forEach(clearTimeout);
       window.removeEventListener('resize', fix);

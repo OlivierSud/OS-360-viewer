@@ -921,6 +921,51 @@ const SphereViewer: React.FC = () => {
     vrPollTimer = window.setInterval(syncVr, 150);
     vrPollTimerRef.current = vrPollTimer;
 
+    const stereoPlugin = viewerRef.current?.getPlugin('stereo') as any;
+    if (stereoPlugin) {
+      stereoPlugin.addEventListener('stereo-updated', (e: any) => {
+        if (!e.stereoEnabled) {
+          // Sync React state
+          setVrActive(false);
+          vrManuallyQuitRef.current = true;
+
+          // Force viewport restoration and sizes recalculation
+          try {
+            const v = viewerRef.current;
+            if (v) {
+              const threeRenderer = (v.renderer as any).renderer;
+              if (threeRenderer) {
+                const size = v.getSize();
+                threeRenderer.setViewport(0, 0, size.width, size.height);
+                threeRenderer.setScissor(0, 0, size.width, size.height);
+                threeRenderer.setScissorTest(false);
+              }
+              v.autoSize();
+              v.needsUpdate();
+            }
+          } catch { /* ignore */ }
+
+          // Defer resizing to account for fullscreen exit transitions
+          window.setTimeout(() => {
+            try {
+              const v = viewerRef.current;
+              if (v) {
+                const threeRenderer = (v.renderer as any).renderer;
+                if (threeRenderer) {
+                  const size = v.getSize();
+                  threeRenderer.setViewport(0, 0, size.width, size.height);
+                  threeRenderer.setScissor(0, 0, size.width, size.height);
+                  threeRenderer.setScissorTest(false);
+                }
+                v.autoSize();
+                v.needsUpdate();
+              }
+            } catch { /* ignore */ }
+          }, 250);
+        }
+      });
+    }
+
     showNavbar();
     const navbarInterval = window.setInterval(showNavbar, 500);
     navbarIntervalRef.current = navbarInterval;
@@ -1852,6 +1897,37 @@ const SphereViewer: React.FC = () => {
               try { (v.renderer as any)?.setCustomRenderer?.(null); } catch { /* ignore */ }
               try { v.exitFullscreen?.(); } catch { /* ignore */ }
               try { stereo?.gyroscope?.stop?.(); } catch { /* ignore */ }
+
+              // Reset WebGLRenderer viewport and scissor
+              try {
+                const threeRenderer = (v.renderer as any).renderer;
+                if (threeRenderer) {
+                  const size = v.getSize();
+                  threeRenderer.setViewport(0, 0, size.width, size.height);
+                  threeRenderer.setScissor(0, 0, size.width, size.height);
+                  threeRenderer.setScissorTest(false);
+                }
+              } catch { /* ignore */ }
+
+              try {
+                v.autoSize();
+                v.needsUpdate();
+              } catch { /* ignore */ }
+
+              // Defer resizing to account for fullscreen exit transition
+              window.setTimeout(() => {
+                try {
+                  const threeRenderer = (v.renderer as any).renderer;
+                  if (threeRenderer) {
+                    const size = v.getSize();
+                    threeRenderer.setViewport(0, 0, size.width, size.height);
+                    threeRenderer.setScissor(0, 0, size.width, size.height);
+                    threeRenderer.setScissorTest(false);
+                  }
+                  v.autoSize();
+                  v.needsUpdate();
+                } catch { /* ignore */ }
+              }, 250);
             }
           }}
           title={vrActive ? 'Quitter le mode VR' : 'Mode VR (casque cardboard)'}

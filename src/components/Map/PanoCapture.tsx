@@ -52,8 +52,9 @@ const PanoCapture: React.FC<PanoCaptureProps> = ({ onCancel, onComplete }) => {
   const grid = useRef<CapturePoint[]>(buildGrid());
 
   const [hasStarted, setHasStarted] = useState(false);
+  // Index of the next recommended capture point (-1 = let user choose freely)
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [photos, setPhotos] = useState<CapturedPhoto[]>([]);
+  const [photos, setPhotos] = useState<(CapturedPhoto | null)[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [stitching, setStitching] = useState(false);
   const [videoSize, setVideoSize] = useState({ w: 1280, h: 720 });
@@ -133,8 +134,8 @@ const PanoCapture: React.FC<PanoCaptureProps> = ({ onCancel, onComplete }) => {
     }
   };
 
-  // Perform single photo capture
-  const captureCurrent = useCallback(async (actualYaw: number, actualPitch: number, actualRoll: number) => {
+  // Perform single photo capture for a given grid index
+  const captureAt = useCallback(async (gridIndex: number, actualYaw: number, actualPitch: number, actualRoll: number) => {
     const video = videoRef.current;
     if (!video) return;
 
@@ -172,15 +173,25 @@ const PanoCapture: React.FC<PanoCaptureProps> = ({ onCancel, onComplete }) => {
 
     setPhotos((prev) => {
       const next = [...prev];
-      next[currentIndex] = { bitmap, yaw: actualYaw, pitch: actualPitch, roll: actualRoll, screenAngle };
+      next[gridIndex] = { bitmap, yaw: actualYaw, pitch: actualPitch, roll: actualRoll, screenAngle };
       return next;
     });
 
     lockProgressRef.current = 0;
-    if (currentIndex < grid.current.length - 1) {
-      setCurrentIndex((i) => i + 1);
-    }
-  }, [currentIndex, videoSize]);
+    // Advance currentIndex to the next uncaptured point
+    setCurrentIndex((prev) => {
+      for (let i = 0; i < grid.current.length; i++) {
+        const ni = (gridIndex + 1 + i) % grid.current.length;
+        if (ni !== gridIndex) return ni;
+      }
+      return prev;
+    });
+  }, [videoSize]);
+
+  // Legacy wrapper kept for the auto-snap (RAF loop)
+  const captureCurrent = useCallback(async (actualYaw: number, actualPitch: number, actualRoll: number) => {
+    await captureAt(currentIndex, actualYaw, actualPitch, actualRoll);
+  }, [captureAt, currentIndex]);
 
   // Request gyroscope permissions and start
   const handleStartCapture = async () => {
@@ -484,24 +495,34 @@ const PanoCapture: React.FC<PanoCaptureProps> = ({ onCancel, onComplete }) => {
     return () => cancelAnimationFrame(rafId);
   }, [hasStarted, currentIndex, photos, stitching, captureCurrent]);
 
-  const goBack = useCallback(() => {
-    setCurrentIndex((i) => Math.max(0, i - 1));
-  }, []);
-
   const allCaptured = photos.filter(Boolean).length >= grid.current.length;
 
   const handleCreate = useCallback(async () => {
-    const captured = photos.filter(Boolean) as CapturedPhoto[];
-    if (captured.length < 2) {
-      setError('Capturez au moins 2 photos pour créer un panorama.');
-      return;
-    }
+    // Build full-length array, filling missing slots with a black bitmap
     setStitching(true);
     try {
-      const blob = await stitchPanorama(captured, OUTPUT_W, OUTPUT_H, videoSize);
+      const filledPhotos: CapturedPhoto[] = await Promise.all(
+        grid.current.map(async (pt, i) => {
+          if (photos[i]) return photos[i] as CapturedPhoto;
+          // Create a 2x2 black bitmap as placeholder
+          const c = document.createElement('canvas');
+          c.width = 2; c.height = 2;
+          const bmp = 'createImageBitmap' in window
+            ? await createImageBitmap(c)
+            : (c as unknown as ImageBitmap);
+          return {
+            bitmap: bmp,
+            yaw: pt.yaw,
+            pitch: pt.pitch,
+            roll: 0,
+            screenAngle: photos.find(Boolean)?.screenAngle ?? 0,
+          };
+        })
+      );
+      const blob = await stitchPanorama(filledPhotos, OUTPUT_W, OUTPUT_H, videoSize);
       onComplete(blob);
     } catch (e) {
-      setError('L’assemblage du panorama a échoué : ' + (e as Error).message);
+      setError('L’assemblage du panorama a échoué : ' + (e as Error).message);
       setStitching(false);
     }
   }, [photos, videoSize, onComplete]);
@@ -524,7 +545,7 @@ const PanoCapture: React.FC<PanoCaptureProps> = ({ onCancel, onComplete }) => {
           <div style={{ fontSize: '3rem', marginBottom: 16 }}>📸</div>
           <h2 style={{ margin: '0 0 10px 0', fontSize: '1.4rem', fontWeight: 700 }}>Prendre un panorama 360°</h2>
           <p style={{ margin: '0 0 24px 0', fontSize: '0.92rem', color: '#aaa', maxWidth: 300, lineHeight: 1.45 }}>
-            Tenez votre téléphone verticalement devant vous. Vous serez guidé visuellement pour capturer les 24 angles requis.
+            Tenez votre téléphone verticalement devant vous. Vous serez guidé visuellement pour capturer les {total} angles requis.
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%', maxWidth: 260 }}>
             <button onClick={handleStartCapture} style={btnStyle('#007acc')}>
@@ -545,6 +566,47 @@ const PanoCapture: React.FC<PanoCaptureProps> = ({ onCancel, onComplete }) => {
         }} />
       )}
 
+      {/* 3. Full-screen Validate overlay when all photos done */}
+      {allCaptured && !stitching && (
+        <div style={{
+          position: 'absolute', inset: 0, zIndex: 5080,
+          background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(6px)',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          gap: 16,
+        }}>
+          <div style={{ fontSize: '3.5rem' }}>✅</div>
+          <div style={{ fontSize: '1.3rem', fontWeight: 700, textAlign: 'center' }}>Toutes les photos capturées !</div>
+          <div style={{ fontSize: '0.9rem', color: '#aaa', textAlign: 'center', maxWidth: 260 }}>
+            Vous pouvez générer le panorama ou reprendre des photos.
+          </div>
+          <button
+            onClick={handleCreate}
+            style={{ ...btnStyle('#28a745'), fontSize: '1rem', padding: '14px 36px', marginTop: 8 }}
+          >
+            🌐 Valider et créer le panorama
+          </button>
+          <button
+            onClick={() => setCurrentIndex(photos.findIndex((p) => !p) >= 0 ? photos.findIndex((p) => !p) : 0)}
+            style={btnStyle('rgba(255,255,255,0.12)')}
+          >
+            Continuer à capturer
+          </button>
+        </div>
+      )}
+
+      {/* 4. Stitching progress overlay */}
+      {stitching && (
+        <div style={{
+          position: 'absolute', inset: 0, zIndex: 5085,
+          background: 'rgba(0,0,0,0.85)', display: 'flex',
+          flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16
+        }}>
+          <div style={{ fontSize: '2rem' }}>⚙️</div>
+          <div style={{ fontSize: '1.1rem', fontWeight: 600 }}>Assemblage du panorama…</div>
+          <div style={{ fontSize: '0.85rem', color: '#aaa' }}>Cela peut prendre quelques secondes.</div>
+        </div>
+      )}
+
       {/* Header Bar */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -554,7 +616,14 @@ const PanoCapture: React.FC<PanoCaptureProps> = ({ onCancel, onComplete }) => {
         <div style={{ fontSize: '0.92rem', fontWeight: 600 }}>
           Panorama 360° — {done}/{total}
         </div>
-        <div style={{ width: 80 }} />
+        {/* Always-visible Generate button */}
+        <button
+          onClick={handleCreate}
+          disabled={stitching || done < 2}
+          style={btnStyle(done >= 2 ? '#e67e00' : 'rgba(255,255,255,0.05)')}
+        >
+          {stitching ? '…' : '🌐 Générer'}
+        </button>
       </div>
 
       {/* Camera Viewport + Targeting Canvas */}
@@ -583,35 +652,51 @@ const PanoCapture: React.FC<PanoCaptureProps> = ({ onCancel, onComplete }) => {
         )}
       </div>
 
-      {/* Control Buttons (Manual Snapping / Reset) */}
+      {/* Control Buttons */}
       <div style={{
         display: 'flex', gap: 12, padding: '16px 20px', justifyContent: 'center',
-        background: 'rgba(15,15,20,0.85)', backdropFilter: 'blur(8px)', zIndex: 5010
+        background: 'rgba(15,15,20,0.85)', backdropFilter: 'blur(8px)', zIndex: 5010,
+        flexWrap: 'wrap',
       }}>
-        <button
-          onClick={goBack}
-          disabled={currentIndex === 0 || stitching}
-          style={btnStyle(currentIndex === 0 ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.15)')}
-        >
-          ◀ Reculer
-        </button>
+        {/* Nearby uncaptured point shortcuts */}
+        {hasStarted && grid.current
+          .map((pt, idx) => ({ pt, idx }))
+          .filter(({ idx }) => !photos[idx]) // only uncaptured
+          .sort((a, b) => {
+            // sort by closeness to current orientation (yaw diff)
+            const orient = deviceOrientationRef.current;
+            const diffA = Math.abs(((a.pt.yaw - orient.yaw + 540) % 360) - 180);
+            const diffB = Math.abs(((b.pt.yaw - orient.yaw + 540) % 360) - 180);
+            return diffA - diffB;
+          })
+          .slice(0, 4) // show up to 4 nearest
+          .map(({ pt, idx }) => (
+            <button
+              key={idx}
+              onClick={() => setCurrentIndex(idx)}
+              style={{
+                ...btnStyle(currentIndex === idx ? '#007acc' : 'rgba(255,255,255,0.12)'),
+                minWidth: 52, padding: '8px 10px', fontSize: '0.72rem',
+                border: currentIndex === idx ? '2px solid #007acc' : '1px solid rgba(255,255,255,0.1)',
+              }}
+            >
+              <div style={{ fontSize: '1rem' }}>{pt.pitch < 0 ? '⬆️' : pt.pitch > 0 ? '⬇️' : '➡️'}</div>
+              <div style={{ marginTop: 2 }}>{Math.round(pt.yaw)}°</div>
+            </button>
+          ))
+        }
 
-        {!allCaptured ? (
-          <button
-            onClick={() => {
-              const orient = deviceOrientationRef.current;
-              captureCurrent(orient.yaw, orient.pitch, orient.roll);
-            }}
-            disabled={stitching}
-            style={btnStyle('#007acc')}
-          >
-            Prendre la photo ({done + 1}/{total})
-          </button>
-        ) : (
-          <button onClick={handleCreate} disabled={stitching} style={btnStyle('#28a745')}>
-            {stitching ? 'Création du panorama…' : 'Finaliser le panorama'}
-          </button>
-        )}
+        {/* Manual capture button */}
+        <button
+          onClick={() => {
+            const orient = deviceOrientationRef.current;
+            captureCurrent(orient.yaw, orient.pitch, orient.roll);
+          }}
+          disabled={stitching}
+          style={{ ...btnStyle('#007acc'), minWidth: 100 }}
+        >
+          📷 Photo ({done}/{total})
+        </button>
       </div>
 
       {/* CSS Animation for flash effect */}

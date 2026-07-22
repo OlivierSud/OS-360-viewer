@@ -2,7 +2,7 @@
   "name": "OS-360 Viewer & Editor",
   "short_name": "OS-360",
   "description": "Editeur et visionneuse de visites virtuelles 360°",
-  "start_url": ".",
+  "start_url": "/OS-360-viewer/",
   "display": "standalone",
   "orientation": "any",
   "background_color": "#141416",

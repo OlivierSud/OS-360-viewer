@@ -1,4 +1,4 @@
-const CACHE_NAME = 'os-360-viewer-v4';
+const CACHE_NAME = 'os-360-viewer-v5';
 const ASSETS = [
   './',
   'index.html',

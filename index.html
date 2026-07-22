@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.png" />
-    <link rel="manifest" href="manifest.json" />
+    <link rel="manifest" href="/OS-360-viewer/manifest.json" />
     <meta name="theme-color" content="#007acc" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>OS-360-viewer</title>
@@ -28,7 +28,7 @@
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
           window.__pwaDebug.log('Registering SW...');
-          navigator.serviceWorker.register('sw.js?v=4')
+          navigator.serviceWorker.register('/OS-360-viewer/sw.js?v=5')
             .then(reg => {
               window.__pwaDebug.swStatus = 'registered';
               window.__pwaDebug.log('SW registered: ' + reg.scope);

@@ -37,6 +37,10 @@ const SphereViewer: React.FC = () => {
   const vrLayerRef = useRef<HTMLDivElement | null>(null);
   const vrOverlayRef = useRef<HTMLDivElement | null>(null);
   const vrReticleRefs = useRef<{ left: SVGCircleElement | null; right: SVGCircleElement | null } | null>(null);
+  const vrReticleRingsRef = useRef<{
+    left: { base: SVGCircleElement; prog: SVGCircleElement };
+    right: { base: SVGCircleElement; prog: SVGCircleElement };
+  } | null>(null);
   const vrReticleWrapRef = useRef<{ left: HTMLDivElement; right: HTMLDivElement } | null>(null);
   const vrMarkerElsRef = useRef<Map<string, { left: HTMLDivElement; right: HTMLDivElement }>>(new Map());
   // Per-eye "close" targeting points (✕) shown in VR when a hotspot popup is open,
@@ -231,12 +235,16 @@ const SphereViewer: React.FC = () => {
       svg.appendChild(base); svg.appendChild(prog); svg.appendChild(dot);
       wrap.appendChild(svg);
       layer.appendChild(wrap);
-      return { wrap, prog };
+      return { wrap, base, prog };
     };
     const rLeft = makeReticle(25);
     const rRight = makeReticle(75);
     vrReticleWrapRef.current = { left: rLeft.wrap, right: rRight.wrap };
     vrReticleRefs.current = { left: rLeft.prog, right: rRight.prog };
+    vrReticleRingsRef.current = {
+      left: { base: rLeft.base, prog: rLeft.prog },
+      right: { base: rRight.base, prog: rRight.prog },
+    };
 
     // Overlay where per-eye marker / popup / close targeting points are appended.
     const overlay = document.createElement('div');
@@ -253,6 +261,7 @@ const SphereViewer: React.FC = () => {
       vrOverlayRef.current = null;
       vrReticleRefs.current = null;
       vrReticleWrapRef.current = null;
+      vrReticleRingsRef.current = null;
       // Drop any dynamically created children (markers / popup / close) too.
       for (const [, pair] of vrMarkerElsRef.current) { pair.left.remove(); pair.right.remove(); }
       vrMarkerElsRef.current.clear();
@@ -339,13 +348,22 @@ const SphereViewer: React.FC = () => {
     const updateReticles = (p: number, active: boolean) => {
       const refs = vrReticleRefs.current;
       const wraps = vrReticleWrapRef.current;
-      if (!refs || !wraps) return;
+      const rings = vrReticleRingsRef.current;
+      if (!refs || !wraps || !rings) return;
       const offset = RING_LEN * (1 - p);
       if (refs.left) refs.left.setAttribute('stroke-dashoffset', `${offset}`);
       if (refs.right) refs.right.setAttribute('stroke-dashoffset', `${offset}`);
       const disp = active ? 'block' : 'none';
-      wraps.left.style.display = disp;
-      wraps.right.style.display = disp;
+      
+      // Hide or show the outer charging rings
+      rings.left.base.style.display = disp;
+      rings.left.prog.style.display = disp;
+      rings.right.base.style.display = disp;
+      rings.right.prog.style.display = disp;
+
+      // Keep the wrappers (and the center dots within them) always visible while in VR
+      wraps.left.style.display = 'block';
+      wraps.right.style.display = 'block';
     };
 
     if (!vrActive) {
@@ -839,7 +857,14 @@ const SphereViewer: React.FC = () => {
         container: containerRef.current,
         panorama: getPanorama(selectedScene),
         plugins,
-        navbar: true,
+        navbar: [
+          'zoom',
+          'move',
+          'download',
+          'description',
+          'caption',
+          'fullscreen'
+        ],
         ...(isCurrentVideo
           ? { adapter: [EquirectangularVideoAdapter, { muted: false, autoplay: true }] }
           : {}),

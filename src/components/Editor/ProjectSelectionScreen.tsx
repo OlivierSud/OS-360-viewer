@@ -27,6 +27,7 @@ const ProjectSelectionScreen: React.FC<ProjectSelectionScreenProps> = ({ onClose
   const [isMobile, setIsMobile] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
   const [showIOSGuide, setShowIOSGuide] = useState(false);
+  const [showGenericGuide, setShowGenericGuide] = useState(false);
 
   useEffect(() => {
     void refreshCloudList();
@@ -68,6 +69,8 @@ const ProjectSelectionScreen: React.FC<ProjectSelectionScreenProps> = ({ onClose
       });
     } else if (isIOS) {
       setShowIOSGuide(true);
+    } else {
+      setShowGenericGuide(true);
     }
   };
 
@@ -281,7 +284,7 @@ const ProjectSelectionScreen: React.FC<ProjectSelectionScreenProps> = ({ onClose
         ＋ Nouveau projet
       </button>
 
-      {isMobile && !isStandalone && (deferredPrompt || isIOS) && (
+      {isMobile && !isStandalone && (
         <button
           onClick={handleInstallClick}
           style={{
@@ -364,6 +367,65 @@ const ProjectSelectionScreen: React.FC<ProjectSelectionScreenProps> = ({ onClose
             </ol>
             <button
               onClick={() => setShowIOSGuide(false)}
+              style={{
+                width: '100%',
+                padding: '10px 0',
+                background: '#007acc',
+                border: 'none',
+                borderRadius: '8px',
+                color: 'white',
+                fontWeight: 600,
+                fontSize: '0.9rem',
+                cursor: 'pointer',
+              }}
+            >
+              Compris
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showGenericGuide && (
+        <div
+          onClick={() => setShowGenericGuide(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 3000,
+            background: 'rgba(0,0,0,0.85)',
+            backdropFilter: 'blur(8px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: '#1c1c1e',
+              border: '1px solid rgba(255,255,255,0.12)',
+              borderRadius: '16px',
+              padding: '24px',
+              width: '100%',
+              maxWidth: '320px',
+              textAlign: 'center',
+              boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+              color: 'white',
+              fontFamily: 'system-ui, sans-serif',
+            }}
+          >
+            <div style={{ fontSize: '2.5rem', marginBottom: '12px' }}>📲</div>
+            <h3 style={{ margin: '0 0 12px 0', fontSize: '1.2rem', fontWeight: 700 }}>Installer l'application</h3>
+            <p style={{ fontSize: '0.88rem', color: '#aaa', lineHeight: 1.45, margin: '0 0 20px 0' }}>
+              Pour installer cette application sur votre appareil :
+            </p>
+            <ol style={{ textAlign: 'left', fontSize: '0.85rem', color: '#ddd', paddingLeft: '20px', lineHeight: 1.6, margin: '0 0 20px 0' }}>
+              <li>Ouvrez le menu de votre navigateur (les trois points <strong>⋮</strong> ou l'icône de partage).</li>
+              <li>Sélectionnez <strong>Ajouter à l'écran d'accueil</strong> ou <strong>Installer l'application</strong>.</li>
+            </ol>
+            <button
+              onClick={() => setShowGenericGuide(false)}
               style={{
                 width: '100%',
                 padding: '10px 0',

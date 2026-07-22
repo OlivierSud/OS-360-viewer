@@ -664,8 +664,8 @@ export async function stitchPanorama(
   const gl = canvas.getContext('webgl2');
   if (!gl) throw new Error('WebGL2 non supporté sur cet appareil.');
 
-  // Est. horizontal FOV of the wide-angle camera sensor (typically ~78 degrees)
-  const SENSOR_HFOV = (78 * Math.PI) / 180;
+  // Est. horizontal FOV of the wide-angle camera sensor (typically ~85 degrees)
+  const SENSOR_HFOV = (85 * Math.PI) / 180;
   let tanHalfH: number;
   let tanHalfV: number;
   const vw = videoSize.w;
@@ -713,13 +713,13 @@ export async function stitchPanorama(
     let rot = 0;
     if (p.screenAngle === 0) {
       // Portrait screen: needs 90-degree rotation clockwise to compensate
-      rot = -Math.PI / 2;
+      rot = Math.PI / 2;
     } else if (p.screenAngle === 90) {
       rot = 0;
     } else if (p.screenAngle === 270 || p.screenAngle === -90) {
       rot = Math.PI;
     } else if (p.screenAngle === 180) {
-      rot = Math.PI / 2;
+      rot = -Math.PI / 2;
     }
     texRotArr.push(rot);
 

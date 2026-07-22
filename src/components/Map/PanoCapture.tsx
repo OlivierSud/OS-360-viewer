@@ -69,6 +69,8 @@ const PanoCapture: React.FC<PanoCaptureProps> = ({ onCancel, onComplete }) => {
   });
   const yawOffsetRef = useRef<number | null>(null);
   const lockProgressRef = useRef<number>(0); // 0 to 1
+  // Screen-space positions of all projected points (for tap hit-testing)
+  const projectedRef = useRef<{ idx: number; sx: number; sy: number }[]>([]);
 
   // Start the camera
   useEffect(() => {
@@ -281,7 +283,7 @@ const PanoCapture: React.FC<PanoCaptureProps> = ({ onCancel, onComplete }) => {
     return () => window.removeEventListener('deviceorientation', handleOrientation);
   }, [hasStarted]);
 
-  // Main UI update loops (using canvas + RAF for 60fps buttery-smooth target guides)
+  // Main UI update loop: projects ALL capture points onto the camera view
   useEffect(() => {
     if (!hasStarted) return;
     const canvas = canvasRef.current;
@@ -306,194 +308,178 @@ const PanoCapture: React.FC<PanoCaptureProps> = ({ onCancel, onComplete }) => {
         canvas.width = W;
         canvas.height = H;
       }
-
       ctx.clearRect(0, 0, W, H);
 
       const orientation = deviceOrientationRef.current;
-      const point = grid.current[currentIndex];
-
-      if (!orientation.valid || !point) {
-        // Fallback static guide if orientation sensor is unavailable
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(W / 2, H / 2, 45, 0, 2 * Math.PI);
-        ctx.stroke();
-        rafId = requestAnimationFrame(updateUI);
-        return;
-      }
-
       const cx = W / 2;
       const cy = H / 2;
-      const f = Math.min(W, H) * 1.5; // Focal scale mapping angles to pixels
+      // Focal length: maps sin(angle) → pixels. ~1.2 gives ~70° HFOV on screen.
+      const f = Math.min(W, H) * 1.2;
 
-      const dyaw = getAngleDiff(point.yaw, orientation.yaw);
-      const dpitch = point.pitch - orientation.pitch;
-
-      const yawRad = dyaw * deg2rad;
-      const pitchRad = dpitch * deg2rad;
-
-      // Project target dot onto 2D screen
-      const cosYaw = Math.cos(yawRad);
-      const isTargetInFront = cosYaw > 0;
-      const tx = cx + Math.sin(yawRad) * f;
-      const ty = cy - Math.sin(pitchRad) * f;
-
-      const distToTarget = Math.hypot(tx - cx, ty - cy);
-      const targetThreshold = 25; // Snap alignment radius in px
-      const isAligned = isTargetInFront && distToTarget < targetThreshold;
-
-      // 1. Draw static center crosshair & reticle
-      ctx.lineWidth = 2;
-      if (isAligned) {
-        ctx.strokeStyle = '#28a745';
-        ctx.fillStyle = 'rgba(40, 167, 69, 0.15)';
-      } else {
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
+      // ── Center reticle ────────────────────────────────────────
+      const currentPt = grid.current[currentIndex];
+      let isAligned = false;
+      if (orientation.valid && currentPt && !photos[currentIndex]) {
+        const dy = getAngleDiff(currentPt.yaw, orientation.yaw) * deg2rad;
+        const dp = (currentPt.pitch - orientation.pitch) * deg2rad;
+        const tx = cx + Math.sin(dy) * f;
+        const ty = cy - Math.sin(dp) * f;
+        const dist = Math.hypot(tx - cx, ty - cy);
+        isAligned = Math.cos(dy) > 0 && dist < 28;
       }
-      ctx.beginPath();
-      ctx.arc(cx, cy, 32, 0, 2 * Math.PI);
-      ctx.fill();
-      ctx.stroke();
 
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = isAligned ? '#28a745' : 'rgba(255,255,255,0.7)';
+      ctx.fillStyle = isAligned ? 'rgba(40,167,69,0.12)' : 'rgba(255,255,255,0.04)';
+      ctx.beginPath(); ctx.arc(cx, cy, 30, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
       ctx.beginPath();
       ctx.moveTo(cx - 10, cy); ctx.lineTo(cx + 10, cy);
       ctx.moveTo(cx, cy - 10); ctx.lineTo(cx, cy + 10);
       ctx.stroke();
 
-      // 2. Draw target positioning point
-      if (isTargetInFront) {
-        ctx.lineWidth = 3;
-        ctx.strokeStyle = isAligned ? '#28a745' : '#ff9800';
-        ctx.fillStyle = isAligned ? 'rgba(40, 167, 69, 0.4)' : 'rgba(255, 152, 0, 0.2)';
-        ctx.beginPath();
-        ctx.arc(tx, ty, 16, 0, 2 * Math.PI);
-        ctx.fill();
-        ctx.stroke();
-
-        ctx.fillStyle = isAligned ? '#28a745' : '#ff9800';
-        ctx.beginPath();
-        ctx.arc(tx, ty, 4, 0, 2 * Math.PI);
-        ctx.fill();
-      }
-
-      // 3. Draw direction pointer arrows on edge of screen if target is off-screen
-      const isTargetOffscreen = !isTargetInFront || tx < 20 || tx > W - 20 || ty < 20 || ty > H - 20;
-      if (isTargetOffscreen) {
-        const dx = tx - cx;
-        const dy = ty - cy;
-        const angle = Math.atan2(dy, dx);
-
-        const edgeX = cx + Math.cos(angle) * (cx - 30);
-        const edgeY = cy + Math.sin(angle) * (cy - 30);
-
-        ctx.save();
-        ctx.translate(edgeX, edgeY);
-        ctx.rotate(angle);
-
-        // Draw neon warning arrow pointing toward target
-        ctx.fillStyle = '#ff9800';
-        ctx.beginPath();
-        ctx.moveTo(12, 0);
-        ctx.lineTo(-8, -10);
-        ctx.lineTo(-4, 0);
-        ctx.lineTo(-8, 10);
-        ctx.closePath();
-        ctx.fill();
-        ctx.restore();
-      }
-
-      // 4. Auto-capture logic when target is aligned & held steady
+      // ── Auto-snap progress ring ───────────────────────────────
       if (isAligned && !stitching) {
-        lockProgressRef.current = Math.min(1, lockProgressRef.current + 0.04); // Takes ~400ms to lock
-
-        // Draw radial loading arc around the reticle
+        lockProgressRef.current = Math.min(1, lockProgressRef.current + 0.04);
         ctx.lineWidth = 4;
         ctx.strokeStyle = '#28a745';
         ctx.beginPath();
-        ctx.arc(cx, cy, 38, -Math.PI / 2, -Math.PI / 2 + 2 * Math.PI * lockProgressRef.current);
+        ctx.arc(cx, cy, 36, -Math.PI / 2, -Math.PI / 2 + 2 * Math.PI * lockProgressRef.current);
         ctx.stroke();
-
         if (lockProgressRef.current >= 1) {
           lockProgressRef.current = 0;
           captureCurrent(orientation.yaw, orientation.pitch, orientation.roll);
         }
       } else {
-        lockProgressRef.current = Math.max(0, lockProgressRef.current - 0.08); // Decays faster
+        lockProgressRef.current = Math.max(0, lockProgressRef.current - 0.08);
       }
 
-      // 5. Draw modern Radar mini-map of captured grid positions in top-right
-      const radarSize = 65;
-      const rx = W - radarSize - 20;
-      const ry = 20 + 40; // below title bar
+      // ── Project & draw ALL grid points ────────────────────────
+      const newProjected: { idx: number; sx: number; sy: number }[] = [];
+      const margin = 28;
 
-      ctx.save();
-      // Draw radar backdrop
-      ctx.fillStyle = 'rgba(0,0,0,0.5)';
-      ctx.strokeStyle = 'rgba(255,255,255,0.2)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.arc(rx, ry, radarSize, 0, 2 * Math.PI);
-      ctx.fill();
-      ctx.stroke();
+      grid.current.forEach((pt, idx) => {
+        const isCaptured = !!photos[idx];
+        const isCurrent = idx === currentIndex;
 
-      // Draw concentric rings representing pitch rows (-30, 0, 30)
-      ctx.strokeStyle = 'rgba(255,255,255,0.08)';
-      ctx.beginPath();
-      ctx.arc(rx, ry, radarSize * 0.4, 0, 2 * Math.PI);
-      ctx.arc(rx, ry, radarSize * 0.75, 0, 2 * Math.PI);
-      ctx.stroke();
+        const dyaw = getAngleDiff(pt.yaw, orientation.yaw);
+        const dp = pt.pitch - orientation.pitch;
+        const yRad = dyaw * deg2rad;
+        const pRad = dp * deg2rad;
+        const inFront = Math.cos(yRad) > 0;
 
-      // Draw active sensor direction slice (radar sweep)
-      ctx.fillStyle = 'rgba(255,255,255,0.06)';
-      const sensorYawRad = orientation.yaw * deg2rad - Math.PI / 2;
-      ctx.beginPath();
-      ctx.moveTo(rx, ry);
-      ctx.arc(rx, ry, radarSize, sensorYawRad - 0.3, sensorYawRad + 0.3);
-      ctx.closePath();
-      ctx.fill();
+        const sx = cx + Math.sin(yRad) * f;
+        const sy = cy - Math.sin(pRad) * f;
+        const onScreen = sx > margin && sx < W - margin && sy > margin && sy < H - margin;
 
-      // Plot all grid points on the radar
-      grid.current.forEach((pt, index) => {
-        const ptYawRad = pt.yaw * deg2rad - Math.PI / 2;
-        // Map pitch: -30 = outer circle, 0 = mid circle, 30 = inner circle
-        let distFactor = 0.58; // default equator
-        if (pt.pitch === -30) distFactor = 0.88;
-        if (pt.pitch === 30) distFactor = 0.28;
+        if (inFront && onScreen) {
+          newProjected.push({ idx, sx, sy });
 
-        const ptx = rx + Math.cos(ptYawRad) * (radarSize * distFactor);
-        const pty = ry + Math.sin(ptYawRad) * (radarSize * distFactor);
-
-        const isCaptured = !!photos[index];
-        const isCurrent = index === currentIndex;
-
-        if (isCurrent) {
-          ctx.fillStyle = '#ff9800'; // Pulsing orange target
-          const pulse = 2 + Math.abs(Math.sin(Date.now() / 150)) * 2;
+          if (isCaptured) {
+            // Green filled bubble
+            ctx.save();
+            ctx.fillStyle = 'rgba(40,167,69,0.45)';
+            ctx.strokeStyle = '#28a745';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath(); ctx.arc(sx, sy, 14, 0, 2 * Math.PI);
+            ctx.fill(); ctx.stroke();
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 13px system-ui';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('✓', sx, sy);
+            ctx.restore();
+          } else if (isCurrent) {
+            // Orange active target
+            ctx.save();
+            const pulse = 16 + Math.abs(Math.sin(Date.now() / 300)) * 4;
+            ctx.fillStyle = 'rgba(255,152,0,0.25)';
+            ctx.strokeStyle = '#ff9800';
+            ctx.lineWidth = 2.5;
+            ctx.beginPath(); ctx.arc(sx, sy, pulse, 0, 2 * Math.PI);
+            ctx.fill(); ctx.stroke();
+            ctx.fillStyle = '#ff9800';
+            ctx.beginPath(); ctx.arc(sx, sy, 5, 0, 2 * Math.PI); ctx.fill();
+            // Angle label
+            ctx.fillStyle = '#ff9800';
+            ctx.font = 'bold 10px system-ui';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            ctx.fillText(`${Math.round(pt.yaw)}°`, sx, sy + pulse + 3);
+            ctx.restore();
+          } else {
+            // White tappable dot
+            ctx.save();
+            ctx.fillStyle = 'rgba(255,255,255,0.12)';
+            ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath(); ctx.arc(sx, sy, 13, 0, 2 * Math.PI);
+            ctx.fill(); ctx.stroke();
+            // Direction symbol
+            ctx.fillStyle = 'rgba(255,255,255,0.9)';
+            ctx.font = '11px system-ui';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(pt.pitch < 0 ? '↑' : pt.pitch > 0 ? '↓' : '·', sx, sy);
+            // Angle label
+            ctx.fillStyle = 'rgba(255,255,255,0.5)';
+            ctx.font = '9px system-ui';
+            ctx.textBaseline = 'top';
+            ctx.fillText(`${Math.round(pt.yaw)}°`, sx, sy + 15);
+            ctx.restore();
+          }
+        } else if (!inFront || !onScreen) {
+          // Off-screen: draw a small edge arrow toward this point (only if not captured)
+          if (isCaptured) return;
+          const dx2 = sx - cx, dy2 = sy - cy;
+          const angle = Math.atan2(dy2, dx2);
+          const edgeR = Math.min(cx, cy) - margin;
+          const ex = cx + Math.cos(angle) * edgeR;
+          const ey = cy + Math.sin(angle) * edgeR;
+          ctx.save();
+          ctx.translate(ex, ey);
+          ctx.rotate(angle);
+          ctx.fillStyle = isCurrent ? '#ff9800' : 'rgba(255,255,255,0.22)';
           ctx.beginPath();
-          ctx.arc(ptx, pty, pulse, 0, 2 * Math.PI);
-          ctx.fill();
-        } else if (isCaptured) {
-          ctx.fillStyle = '#28a745'; // Done green
-          ctx.beginPath();
-          ctx.arc(ptx, pty, 3.5, 0, 2 * Math.PI);
-          ctx.fill();
-        } else {
-          ctx.fillStyle = 'rgba(255,255,255,0.3)'; // Pending gray
-          ctx.beginPath();
-          ctx.arc(ptx, pty, 2.5, 0, 2 * Math.PI);
-          ctx.fill();
+          ctx.moveTo(9, 0); ctx.lineTo(-6, -5); ctx.lineTo(-6, 5);
+          ctx.closePath(); ctx.fill();
+          ctx.restore();
         }
       });
-      ctx.restore();
 
+      projectedRef.current = newProjected;
       rafId = requestAnimationFrame(updateUI);
     };
 
     rafId = requestAnimationFrame(updateUI);
     return () => cancelAnimationFrame(rafId);
   }, [hasStarted, currentIndex, photos, stitching, captureCurrent]);
+
+  // Handle tap on camera canvas to select a capture point
+  const handleCanvasTap = useCallback((e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    let cx: number, cy: number;
+    if ('touches' in e) {
+      const t = e.touches[0] || e.changedTouches[0];
+      cx = t.clientX - rect.left;
+      cy = t.clientY - rect.top;
+    } else {
+      cx = e.clientX - rect.left;
+      cy = e.clientY - rect.top;
+    }
+    // Find closest uncaptured projected point within 40px tap radius
+    let best = -1, bestDist = 40;
+    projectedRef.current.forEach(({ idx, sx, sy }) => {
+      if (photos[idx]) return; // already captured
+      const d = Math.hypot(sx - cx, sy - cy);
+      if (d < bestDist) { bestDist = d; best = idx; }
+    });
+    if (best >= 0) {
+      lockProgressRef.current = 0;
+      setCurrentIndex(best);
+    }
+  }, [photos]);
 
   const allCaptured = photos.filter(Boolean).length >= grid.current.length;
 
@@ -635,10 +621,12 @@ const PanoCapture: React.FC<PanoCaptureProps> = ({ onCancel, onComplete }) => {
           style={{ width: '100%', height: '100%', objectFit: 'cover' }}
         />
         
-        {/* Real-time 60fps guidance canvas */}
+        {/* Real-time 60fps guidance canvas — INTERACTIVE */}
         <canvas
           ref={canvasRef}
-          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', cursor: 'crosshair' }}
+          onClick={handleCanvasTap}
+          onTouchEnd={handleCanvasTap}
         />
 
         {error && (
@@ -652,50 +640,33 @@ const PanoCapture: React.FC<PanoCaptureProps> = ({ onCancel, onComplete }) => {
         )}
       </div>
 
-      {/* Control Buttons */}
+      {/* Bottom bar: Generate + Photo only */}
       <div style={{
-        display: 'flex', gap: 12, padding: '16px 20px', justifyContent: 'center',
-        background: 'rgba(15,15,20,0.85)', backdropFilter: 'blur(8px)', zIndex: 5010,
-        flexWrap: 'wrap',
+        background: 'rgba(15,15,20,0.92)', backdropFilter: 'blur(8px)', zIndex: 5010,
+        display: 'flex', gap: 12, padding: '12px 20px 16px',
+        justifyContent: 'center', alignItems: 'center',
       }}>
-        {/* Nearby uncaptured point shortcuts */}
-        {hasStarted && grid.current
-          .map((pt, idx) => ({ pt, idx }))
-          .filter(({ idx }) => !photos[idx]) // only uncaptured
-          .sort((a, b) => {
-            // sort by closeness to current orientation (yaw diff)
-            const orient = deviceOrientationRef.current;
-            const diffA = Math.abs(((a.pt.yaw - orient.yaw + 540) % 360) - 180);
-            const diffB = Math.abs(((b.pt.yaw - orient.yaw + 540) % 360) - 180);
-            return diffA - diffB;
-          })
-          .slice(0, 4) // show up to 4 nearest
-          .map(({ pt, idx }) => (
-            <button
-              key={idx}
-              onClick={() => setCurrentIndex(idx)}
-              style={{
-                ...btnStyle(currentIndex === idx ? '#007acc' : 'rgba(255,255,255,0.12)'),
-                minWidth: 52, padding: '8px 10px', fontSize: '0.72rem',
-                border: currentIndex === idx ? '2px solid #007acc' : '1px solid rgba(255,255,255,0.1)',
-              }}
-            >
-              <div style={{ fontSize: '1rem' }}>{pt.pitch < 0 ? '⬆️' : pt.pitch > 0 ? '⬇️' : '➡️'}</div>
-              <div style={{ marginTop: 2 }}>{Math.round(pt.yaw)}°</div>
-            </button>
-          ))
-        }
-
-        {/* Manual capture button */}
+        <button
+          onClick={handleCreate}
+          disabled={stitching}
+          style={{
+            ...btnStyle('#e67e00'),
+            flex: 1, maxWidth: 200,
+            opacity: stitching ? 0.5 : 1,
+            boxShadow: '0 0 14px rgba(230,126,0,0.35)',
+          }}
+        >
+          🌐 {stitching ? 'Génération…' : `Générer (${done}/${total})`}
+        </button>
         <button
           onClick={() => {
             const orient = deviceOrientationRef.current;
             captureCurrent(orient.yaw, orient.pitch, orient.roll);
           }}
           disabled={stitching}
-          style={{ ...btnStyle('#007acc'), minWidth: 100 }}
+          style={{ ...btnStyle('#007acc'), flex: 1, maxWidth: 160 }}
         >
-          📷 Photo ({done}/{total})
+          📷 Photo
         </button>
       </div>
 

@@ -12,13 +12,56 @@
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
     <script>
+      window.__pwaDebug = {
+        logs: [],
+        swStatus: 'not registered',
+        promptStatus: 'not fired',
+        log: function(msg) {
+          console.log('[PWADebug]', msg);
+          this.logs.push(msg);
+          if (window.__pwaDebugOnChange) {
+            window.__pwaDebugOnChange();
+          }
+        }
+      };
+
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
+          window.__pwaDebug.log('Registering SW...');
           navigator.serviceWorker.register('sw.js?v=3')
-            .then(reg => console.log('Service Worker registered', reg))
-            .catch(err => console.error('Service Worker registration failed', err));
+            .then(reg => {
+              window.__pwaDebug.swStatus = 'registered';
+              window.__pwaDebug.log('SW registered: ' + reg.scope);
+              
+              if (navigator.serviceWorker.controller) {
+                window.__pwaDebug.log('Page controlled by SW');
+              } else {
+                window.__pwaDebug.log('Page NOT controlled by SW (needs reload)');
+              }
+
+              reg.onupdatefound = () => {
+                const installingWorker = reg.installing;
+                if (installingWorker) {
+                  window.__pwaDebug.log('SW update found, installing...');
+                  installingWorker.onstatechange = () => {
+                    window.__pwaDebug.log('SW state: ' + installingWorker.state);
+                  };
+                }
+              };
+            })
+            .catch(err => {
+              window.__pwaDebug.swStatus = 'failed';
+              window.__pwaDebug.log('SW failed: ' + err.message);
+            });
         });
+      } else {
+        window.__pwaDebug.log('SW API NOT supported');
       }
+
+      window.addEventListener('beforeinstallprompt', (e) => {
+        window.__pwaDebug.promptStatus = 'fired';
+        window.__pwaDebug.log('beforeinstallprompt FIRED');
+      });
     </script>
   </body>
 </html>

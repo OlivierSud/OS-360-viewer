@@ -28,6 +28,21 @@ const ProjectSelectionScreen: React.FC<ProjectSelectionScreenProps> = ({ onClose
   const [isStandalone, setIsStandalone] = useState(false);
   const [showIOSGuide, setShowIOSGuide] = useState(false);
   const [showGenericGuide, setShowGenericGuide] = useState(false);
+  const [pwaDebugLogs, setPwaDebugLogs] = useState<string[]>([]);
+
+  useEffect(() => {
+    if ((window as any).__pwaDebug) {
+      setPwaDebugLogs([...(window as any).__pwaDebug.logs]);
+    }
+    (window as any).__pwaDebugOnChange = () => {
+      if ((window as any).__pwaDebug) {
+        setPwaDebugLogs([...(window as any).__pwaDebug.logs]);
+      }
+    };
+    return () => {
+      (window as any).__pwaDebugOnChange = null;
+    };
+  }, []);
 
   useEffect(() => {
     void refreshCloudList();
@@ -382,8 +397,15 @@ const ProjectSelectionScreen: React.FC<ProjectSelectionScreenProps> = ({ onClose
             >
               Compris
             </button>
-            <div style={{ fontSize: '0.65rem', color: '#555', marginTop: '12px', wordBreak: 'break-all' }}>
-              Debug: Android={String(isAndroid)} | iOS={String(isIOS)} | UA={navigator.userAgent}
+            <div style={{ fontSize: '0.6rem', color: '#888', marginTop: '12px', wordBreak: 'break-all', textAlign: 'left', maxHeight: '120px', overflowY: 'auto' }}>
+              <div>Debug: Android={String(isAndroid)} | iOS={String(isIOS)}</div>
+              <div>Prompt: {(window as any).__pwaDebug?.promptStatus || 'unknown'}</div>
+              <div>SW Status: {(window as any).__pwaDebug?.swStatus || 'unknown'}</div>
+              <div style={{ marginTop: '4px', borderTop: '1px solid #333', paddingTop: '4px' }}>
+                {pwaDebugLogs.map((log, idx) => (
+                  <div key={idx} style={{ fontSize: '0.55rem', color: '#666' }}>• {log}</div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -444,8 +466,15 @@ const ProjectSelectionScreen: React.FC<ProjectSelectionScreenProps> = ({ onClose
             >
               Compris
             </button>
-            <div style={{ fontSize: '0.65rem', color: '#555', marginTop: '12px', wordBreak: 'break-all' }}>
-              Debug: Android={String(isAndroid)} | iOS={String(isIOS)} | UA={navigator.userAgent}
+            <div style={{ fontSize: '0.6rem', color: '#888', marginTop: '12px', wordBreak: 'break-all', textAlign: 'left', maxHeight: '120px', overflowY: 'auto' }}>
+              <div>Debug: Android={String(isAndroid)} | iOS={String(isIOS)}</div>
+              <div>Prompt: {(window as any).__pwaDebug?.promptStatus || 'unknown'}</div>
+              <div>SW Status: {(window as any).__pwaDebug?.swStatus || 'unknown'}</div>
+              <div style={{ marginTop: '4px', borderTop: '1px solid #333', paddingTop: '4px' }}>
+                {pwaDebugLogs.map((log, idx) => (
+                  <div key={idx} style={{ fontSize: '0.55rem', color: '#666' }}>• {log}</div>
+                ))}
+              </div>
             </div>
           </div>
         </div>

@@ -1,10 +1,10 @@
-const CACHE_NAME = 'os-360-viewer-v2';
+const CACHE_NAME = 'os-360-viewer-v3';
 const ASSETS = [
-  '/',
-  '/index.html',
-  '/favicon.png',
-  '/icone.png',
-  '/manifest.json'
+  './',
+  'index.html',
+  'favicon.png',
+  'icone.png',
+  'manifest.json'
 ];
 
 self.addEventListener('install', (e) => {

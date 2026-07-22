@@ -382,6 +382,9 @@ const ProjectSelectionScreen: React.FC<ProjectSelectionScreenProps> = ({ onClose
             >
               Compris
             </button>
+            <div style={{ fontSize: '0.65rem', color: '#555', marginTop: '12px', wordBreak: 'break-all' }}>
+              Debug: Android={String(isAndroid)} | iOS={String(isIOS)} | UA={navigator.userAgent}
+            </div>
           </div>
         </div>
       )}
@@ -441,6 +444,9 @@ const ProjectSelectionScreen: React.FC<ProjectSelectionScreenProps> = ({ onClose
             >
               Compris
             </button>
+            <div style={{ fontSize: '0.65rem', color: '#555', marginTop: '12px', wordBreak: 'break-all' }}>
+              Debug: Android={String(isAndroid)} | iOS={String(isIOS)} | UA={navigator.userAgent}
+            </div>
           </div>
         </div>
       )}

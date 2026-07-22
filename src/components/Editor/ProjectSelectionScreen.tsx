@@ -56,7 +56,8 @@ const ProjectSelectionScreen: React.FC<ProjectSelectionScreenProps> = ({ onClose
     };
   }, [refreshCloudList]);
 
-  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+  const isAndroid = /Android/i.test(navigator.userAgent);
+  const isIOS = !isAndroid && (/iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream);
 
   const handleInstallClick = () => {
     if (deferredPrompt) {

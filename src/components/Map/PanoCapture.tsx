@@ -656,12 +656,27 @@ export async function stitchPanorama(
   const gl = canvas.getContext('webgl2');
   if (!gl) throw new Error('WebGL2 non supporté sur cet appareil.');
 
-  // Set wide angle lens FOV estimates (approx 70deg horizontal typical mobile camera)
-  const HFOV = (68 * Math.PI) / 180;
-  const aspect = videoSize.h / videoSize.w;
-  const VFOV = 2 * Math.atan(Math.tan(HFOV / 2) * aspect);
-  const tanHalfH = Math.tan(HFOV / 2);
-  const tanHalfV = Math.tan(VFOV / 2);
+  // Est. horizontal FOV of the wide-angle camera sensor (typically ~65 degrees)
+  const SENSOR_HFOV = (65 * Math.PI) / 180;
+  let tanHalfH: number;
+  let tanHalfV: number;
+  const vw = videoSize.w;
+  const vh = videoSize.h;
+
+  if (vh > vw) {
+    // Portrait stream: the square crop takes the full width (vw).
+    // So the FOV of the square is equal to the horizontal FOV of the stream.
+    const halfH = SENSOR_HFOV / 2;
+    tanHalfH = Math.tan(halfH);
+    tanHalfV = Math.tan(halfH);
+  } else {
+    // Landscape stream: the square crop takes the full height (vh).
+    // So the FOV of the square is equal to the vertical FOV of the stream.
+    const aspect = vw / vh;
+    const halfV = Math.atan(Math.tan(SENSOR_HFOV / 2) / aspect);
+    tanHalfH = Math.tan(halfV);
+    tanHalfV = Math.tan(halfV);
+  }
 
   const n = photos.length;
   // Build a texture array (all layers RESIZED square).
@@ -715,7 +730,7 @@ export async function stitchPanorama(
 
   mat3 rotY(float a){ float c=cos(a),s=sin(a); return mat3(c,0.0,-s, 0.0,1.0,0.0, s,0.0,c); }
   mat3 rotX(float a){ float c=cos(a),s=sin(a); return mat3(1.0,0.0,0.0, 0.0,c,s, 0.0,-s,c); }
-  mat3 rotZ(float a){ float c=cos(a),s=sin(a); return mat3(c,-s,0.0, s,c,0.0, 0.0,0.0,1.0); }
+  mat3 rotZ(float a){ float c=cos(a),s=sin(a); return mat3(c,s,0.0, -s,c,0.0, 0.0,0.0,1.0); }
 
   void main() {
     float lng = v_uv.x * 2.0 * PI - PI;
@@ -726,7 +741,7 @@ export async function stitchPanorama(
     float bestScore = -1.0;
 
     for (int i = 0; i < ${n}; i++) {
-      mat3 R = rotY(u_yaw[i]) * rotX(u_pitch[i]) * rotZ(u_roll[i]);
+      mat3 R = rotY(u_yaw[i]) * rotX(-u_pitch[i]) * rotZ(-u_roll[i]);
       vec3 cam = transpose(R) * world;
       if (cam.z <= 0.0) continue;
       float xn = cam.x / cam.z;

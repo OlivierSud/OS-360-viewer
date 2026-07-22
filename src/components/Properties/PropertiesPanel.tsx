@@ -1231,13 +1231,24 @@ const PropertiesPanel: React.FC = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const selectedScene = scenes.find((s) => s.id === selectedSceneId) ?? null;
-  const selectedHotspot = selectedScene?.hotspots.find((h) => h.id === selectedHotspotId) ?? null;
 
-  // On mobile, auto-open the sheet when a scene/hotspot gets selected,
-  // or when the project settings are opened from the toolbar.
+
+  // On mobile, only auto-open the sheet when a hotspot is explicitly selected
+  // or when the project settings are opened.
+  const prevHotspotIdRef = useRef<string | null>(null);
+  const prevShowSettingsRef = useRef<boolean>(false);
+
   useEffect(() => {
-    if (selectedScene || selectedHotspot || showProjectSettings) setMobileOpen(true);
-  }, [selectedSceneId, selectedHotspotId, showProjectSettings]);
+    const hotspotOpened = selectedHotspotId && selectedHotspotId !== prevHotspotIdRef.current;
+    const settingsOpened = showProjectSettings && !prevShowSettingsRef.current;
+
+    if (hotspotOpened || settingsOpened) {
+      setMobileOpen(true);
+    }
+
+    prevHotspotIdRef.current = selectedHotspotId;
+    prevShowSettingsRef.current = showProjectSettings;
+  }, [selectedHotspotId, showProjectSettings]);
 
   const hasContent = Boolean(selectedScene);
 

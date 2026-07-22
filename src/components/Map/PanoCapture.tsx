@@ -163,7 +163,7 @@ const PanoCapture: React.FC<PanoCaptureProps> = ({ onCancel, onComplete }) => {
           ref={videoRef}
           playsInline
           muted
-          style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)' }}
+          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
         />
         {/* Reticle for the current point */}
         {point && (
@@ -310,8 +310,8 @@ export async function stitchPanorama(
       float xn = cam.x / cam.z;
       float yn = cam.y / cam.z;
       if (abs(xn) > u_tanH || abs(yn) > u_tanV) continue;
-      float u = xn / (2.0 * u_tanH) + 0.5;
-      float v = yn / (2.0 * u_tanV) + 0.5;
+       float u = xn / (2.0 * u_tanH) + 0.5;
+       float v = yn / (2.0 * u_tanV) + 0.5;
       vec3 col = texture(u_tex, vec3(u, v, float(i))).rgb;
       // quality: best near the photo center
       float dx = abs(xn) / u_tanH;

@@ -88,6 +88,49 @@ const EditorPage: React.FC = () => {
   return (
     <div className="editor-layout">
       <Toolbar />
+      {isMobile && (
+        <div style={{
+          display: 'flex',
+          background: 'rgba(25, 25, 30, 0.95)',
+          backdropFilter: 'blur(10px)',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+          padding: '6px 12px',
+          justifyContent: 'center',
+          gap: '8px',
+          zIndex: 1010,
+        }}>
+          {(['viewer-max', 'split', 'map-max'] as const).map((mode) => {
+            const isActive = layout === mode;
+            const label = mode === 'viewer-max' ? 'Panorama' : mode === 'split' ? 'Scinder' : 'Carte';
+            const icon = mode === 'viewer-max' ? '👁️' : mode === 'split' ? '🥞' : '🗺️';
+            return (
+              <button
+                key={mode}
+                onClick={() => setLayout(mode)}
+                style={{
+                  flex: 1,
+                  maxWidth: '120px',
+                  padding: '6px 10px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: isActive ? '#007acc' : 'transparent',
+                  color: isActive ? 'white' : '#ccc',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '4px',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <span>{icon}</span> {label}
+              </button>
+            );
+          })}
+        </div>
+      )}
       <div className="editor-main">
         <Sidebar />
         <div 

@@ -23,10 +23,53 @@ const ProjectSelectionScreen: React.FC<ProjectSelectionScreenProps> = ({ onClose
   } = useProjectActions();
 
   const [search, setSearch] = useState('');
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isMobile, setIsMobile] = useState(false);
+  const [isStandalone, setIsStandalone] = useState(false);
+  const [showIOSGuide, setShowIOSGuide] = useState(false);
 
   useEffect(() => {
     void refreshCloudList();
+
+    const checkMobile = () => {
+      const match = window.matchMedia('(max-width: 768px)').matches || 
+                    /Mobi|Android|iPhone/i.test(navigator.userAgent);
+      setIsMobile(match);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+
+    const matchStandalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone;
+    setIsStandalone(Boolean(matchStandalone));
+
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    return () => {
+      window.removeEventListener('resize', checkMobile);
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
   }, [refreshCloudList]);
+
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+
+  const handleInstallClick = () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.then((choiceResult: { outcome: string }) => {
+        if (choiceResult.outcome === 'accepted') {
+          console.log('User accepted the PWA install prompt');
+        }
+        setDeferredPrompt(null);
+      });
+    } else if (isIOS) {
+      setShowIOSGuide(true);
+    }
+  };
 
   const query = search.trim().toLowerCase();
   const filtered = query
@@ -238,6 +281,31 @@ const ProjectSelectionScreen: React.FC<ProjectSelectionScreenProps> = ({ onClose
         ＋ Nouveau projet
       </button>
 
+      {isMobile && !isStandalone && (deferredPrompt || isIOS) && (
+        <button
+          onClick={handleInstallClick}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '10px 18px',
+            background: 'rgba(255,255,255,0.08)',
+            border: '1px solid rgba(255,255,255,0.15)',
+            borderRadius: '999px',
+            color: '#fff',
+            fontSize: '0.85rem',
+            fontWeight: 600,
+            cursor: 'pointer',
+            marginTop: '8px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
+            backdropFilter: 'blur(8px)',
+            transition: 'background 0.15s',
+          }}
+        >
+          <span>📲</span> Installer l'application (PWA)
+        </button>
+      )}
+
       {syncStatus && (
         <div style={{ color: '#888', fontSize: '0.8rem' }}>{syncStatus}</div>
       )}
@@ -253,6 +321,66 @@ const ProjectSelectionScreen: React.FC<ProjectSelectionScreenProps> = ({ onClose
         />
       )}
       </div>
+
+      {showIOSGuide && (
+        <div
+          onClick={() => setShowIOSGuide(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 3000,
+            background: 'rgba(0,0,0,0.85)',
+            backdropFilter: 'blur(8px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: '#1c1c1e',
+              border: '1px solid rgba(255,255,255,0.12)',
+              borderRadius: '16px',
+              padding: '24px',
+              width: '100%',
+              maxWidth: '320px',
+              textAlign: 'center',
+              boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+              color: 'white',
+              fontFamily: 'system-ui, sans-serif',
+            }}
+          >
+            <div style={{ fontSize: '2.5rem', marginBottom: '12px' }}>📲</div>
+            <h3 style={{ margin: '0 0 12px 0', fontSize: '1.2rem', fontWeight: 700 }}>Installer sur iOS</h3>
+            <p style={{ fontSize: '0.88rem', color: '#aaa', lineHeight: 1.45, margin: '0 0 20px 0' }}>
+              Pour installer cette application sur votre iPhone ou iPad :
+            </p>
+            <ol style={{ textAlign: 'left', fontSize: '0.85rem', color: '#ddd', paddingLeft: '20px', lineHeight: 1.6, margin: '0 0 20px 0' }}>
+              <li>Appuyez sur le bouton <strong>Partager</strong> <span style={{fontSize:'1.1rem'}}>⎋</span> dans Safari.</li>
+              <li>Faites défiler et sélectionnez <strong>Sur l'écran d'accueil</strong> ＋.</li>
+              <li>Appuyez sur <strong>Ajouter</strong> en haut à droite.</li>
+            </ol>
+            <button
+              onClick={() => setShowIOSGuide(false)}
+              style={{
+                width: '100%',
+                padding: '10px 0',
+                background: '#007acc',
+                border: 'none',
+                borderRadius: '8px',
+                color: 'white',
+                fontWeight: 600,
+                fontSize: '0.9rem',
+                cursor: 'pointer',
+              }}
+            >
+              Compris
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,0 +1,22 @@
+{
+  "name": "OS-360 Viewer & Editor",
+  "short_name": "OS-360",
+  "description": "Editeur et visionneuse de visites virtuelles 360°",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#141416",
+  "theme_color": "#007acc",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icone.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

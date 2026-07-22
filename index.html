@@ -28,7 +28,7 @@
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
           window.__pwaDebug.log('Registering SW...');
-          navigator.serviceWorker.register('sw.js?v=3')
+          navigator.serviceWorker.register('sw.js?v=4')
             .then(reg => {
               window.__pwaDebug.swStatus = 'registered';
               window.__pwaDebug.log('SW registered: ' + reg.scope);

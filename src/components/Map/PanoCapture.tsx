@@ -12,6 +12,7 @@ interface CapturedPhoto {
   yaw: number;   // actual relative yaw when snapped
   pitch: number; // actual pitch when snapped
   roll: number;  // actual roll when snapped
+  screenAngle: number;
 }
 
 interface PanoCaptureProps {
@@ -162,9 +163,16 @@ const PanoCapture: React.FC<PanoCaptureProps> = ({ onCancel, onComplete }) => {
       bitmap = (canvas as unknown) as ImageBitmap;
     }
 
+    let screenAngle = 0;
+    if (window.screen && window.screen.orientation) {
+      screenAngle = window.screen.orientation.angle;
+    } else if (typeof (window as any).orientation === 'number') {
+      screenAngle = (window as any).orientation;
+    }
+
     setPhotos((prev) => {
       const next = [...prev];
-      next[currentIndex] = { bitmap, yaw: actualYaw, pitch: actualPitch, roll: actualRoll };
+      next[currentIndex] = { bitmap, yaw: actualYaw, pitch: actualPitch, roll: actualRoll, screenAngle };
       return next;
     });
 
@@ -656,8 +664,8 @@ export async function stitchPanorama(
   const gl = canvas.getContext('webgl2');
   if (!gl) throw new Error('WebGL2 non supporté sur cet appareil.');
 
-  // Est. horizontal FOV of the wide-angle camera sensor (typically ~65 degrees)
-  const SENSOR_HFOV = (65 * Math.PI) / 180;
+  // Est. horizontal FOV of the wide-angle camera sensor (typically ~78 degrees)
+  const SENSOR_HFOV = (78 * Math.PI) / 180;
   let tanHalfH: number;
   let tanHalfV: number;
   const vw = videoSize.w;
@@ -694,10 +702,27 @@ export async function stitchPanorama(
   const yawArr: number[] = [];
   const pitchArr: number[] = [];
   const rollArr: number[] = [];
+  const texRotArr: number[] = [];
+
   photos.forEach((p, i) => {
     yawArr.push((p.yaw * Math.PI) / 180);
     pitchArr.push((p.pitch * Math.PI) / 180);
-    rollArr.push((p.roll * Math.PI) / 180);
+    rollArr.push(0); // Ignore unstable reported roll to prevent 180-deg flip
+
+    // Determine texture rotation to make portrait images upright
+    let rot = 0;
+    if (p.screenAngle === 0) {
+      // Portrait screen: needs 90-degree rotation clockwise to compensate
+      rot = -Math.PI / 2;
+    } else if (p.screenAngle === 90) {
+      rot = 0;
+    } else if (p.screenAngle === 270 || p.screenAngle === -90) {
+      rot = Math.PI;
+    } else if (p.screenAngle === 180) {
+      rot = Math.PI / 2;
+    }
+    texRotArr.push(rot);
+
     const px = getPixels(p.bitmap, RESIZED);
     gl.texSubImage3D(
       gl.TEXTURE_2D_ARRAY, 0, 0, 0, i, RESIZED, RESIZED, 1,
@@ -724,6 +749,7 @@ export async function stitchPanorama(
   uniform float u_yaw[${n}];
   uniform float u_pitch[${n}];
   uniform float u_roll[${n}];
+  uniform float u_texRot[${n}];
   uniform float u_tanH;
   uniform float u_tanV;
   const float PI = 3.141592653589793;
@@ -747,8 +773,12 @@ export async function stitchPanorama(
       float xn = cam.x / cam.z;
       float yn = cam.y / cam.z;
       if (abs(xn) > u_tanH || abs(yn) > u_tanV) continue;
-       float u = xn / (2.0 * u_tanH) + 0.5;
-       float v = yn / (2.0 * u_tanV) + 0.5;
+      float tu = xn / (2.0 * u_tanH);
+      float tv = yn / (2.0 * u_tanV);
+      float c = cos(u_texRot[i]);
+      float s = sin(u_texRot[i]);
+      float u = (tu * c - tv * s) + 0.5;
+      float v = (tu * s + tv * c) + 0.5;
       vec3 col = texture(u_tex, vec3(u, v, float(i))).rgb;
       // quality: best near the photo center
       float dx = abs(xn) / u_tanH;
@@ -776,6 +806,7 @@ export async function stitchPanorama(
   gl.uniform1fv(gl.getUniformLocation(prog, 'u_yaw'), yawArr);
   gl.uniform1fv(gl.getUniformLocation(prog, 'u_pitch'), pitchArr);
   gl.uniform1fv(gl.getUniformLocation(prog, 'u_roll'), rollArr);
+  gl.uniform1fv(gl.getUniformLocation(prog, 'u_texRot'), texRotArr);
   gl.uniform1i(gl.getUniformLocation(prog, 'u_tex'), 0);
 
   gl.viewport(0, 0, outW, outH);

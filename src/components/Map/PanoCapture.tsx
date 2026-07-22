@@ -20,8 +20,8 @@ interface PanoCaptureProps {
   onComplete: (blob: Blob) => void;
 }
 
-// Grid of capture targets. 3 rows: equator (0), upper (-30), lower (30) x 8 columns.
-const COLS = 8;
+// Grid of capture targets. 3 rows: equator (0), upper (-30), lower (30) x 12 columns.
+const COLS = 12;
 const OUTPUT_W = 4096;
 const OUTPUT_H = 2048;
 const RESIZED = 512; // Resize to square for stitching
@@ -734,7 +734,7 @@ export async function stitchPanorama(
 
   void main() {
     float lng = v_uv.x * 2.0 * PI - PI;
-    float lat = (1.0 - v_uv.y) * PI - PI / 2.0;
+    float lat = v_uv.y * PI - PI / 2.0;
     vec3 world = vec3(cos(lat) * sin(lng), sin(lat), cos(lat) * cos(lng));
 
     vec3 best = vec3(0.0);

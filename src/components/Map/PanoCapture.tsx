@@ -643,12 +643,28 @@ const btnStyle = (bg: string): React.CSSProperties => ({
  * reprojected into an equirectangular panorama by selecting, for every output
  * direction, the sharpest source pixel (closest to its photo's center).
  */
-function getPixels(src: ImageBitmap | HTMLCanvasElement | HTMLImageElement, size: number): Uint8Array {
+/**
+ * Extract pixels from a bitmap, pre-rotating by `rotateDeg` degrees CCW
+ * (use 90 for portrait phone captures where the sensor delivered landscape pixels).
+ */
+function getPixels(
+  src: ImageBitmap | HTMLCanvasElement | HTMLImageElement,
+  size: number,
+  rotateDeg: number = 0,
+): Uint8Array {
   const cv = document.createElement('canvas');
   cv.width = size;
   cv.height = size;
   const ctx = cv.getContext('2d', { willReadFrequently: true })!;
-  ctx.drawImage(src as CanvasImageSource, 0, 0, size, size);
+  if (rotateDeg !== 0) {
+    ctx.save();
+    ctx.translate(size / 2, size / 2);
+    ctx.rotate((rotateDeg * Math.PI) / 180);
+    ctx.drawImage(src as CanvasImageSource, -size / 2, -size / 2, size, size);
+    ctx.restore();
+  } else {
+    ctx.drawImage(src as CanvasImageSource, 0, 0, size, size);
+  }
   return new Uint8Array(ctx.getImageData(0, 0, size, size).data.buffer);
 }
 
@@ -664,27 +680,30 @@ export async function stitchPanorama(
   const gl = canvas.getContext('webgl2');
   if (!gl) throw new Error('WebGL2 non supporté sur cet appareil.');
 
-  // Est. horizontal FOV of the wide-angle camera sensor (typically ~85 degrees)
-  const SENSOR_HFOV = (85 * Math.PI) / 180;
-  let tanHalfH: number;
-  let tanHalfV: number;
+  // Horizontal FOV of the physical camera sensor (wide dimension of the sensor).
+  // On most smartphones the native sensor HFOV is ~68–70° for the standard lens.
+  const SENSOR_HFOV = (68 * Math.PI) / 180;
   const vw = videoSize.w;
   const vh = videoSize.h;
 
+  // The square crop side = min(vw, vh).
+  // In PORTRAIT mode (vh > vw): stream w = short side, h = long side.
+  //   • The SENSOR_HFOV spans the LONG dimension (vh, i.e. what was the
+  //     camera's native landscape width).
+  //   • The square crop width = vw pixels  →  subtended angle:
+  //       FOV_crop = 2 * atan( tan(HFOV/2) * vw / vh )
+  // In LANDSCAPE mode (vw >= vh): standard computation.
+  let halfFov: number;
   if (vh > vw) {
-    // Portrait stream: the square crop takes the full width (vw).
-    // So the FOV of the square is equal to the horizontal FOV of the stream.
-    const halfH = SENSOR_HFOV / 2;
-    tanHalfH = Math.tan(halfH);
-    tanHalfV = Math.tan(halfH);
+    // Portrait stream: SENSOR_HFOV spans vh (the long axis).
+    halfFov = Math.atan(Math.tan(SENSOR_HFOV / 2) * (vw / vh));
   } else {
-    // Landscape stream: the square crop takes the full height (vh).
-    // So the FOV of the square is equal to the vertical FOV of the stream.
-    const aspect = vw / vh;
-    const halfV = Math.atan(Math.tan(SENSOR_HFOV / 2) / aspect);
-    tanHalfH = Math.tan(halfV);
-    tanHalfV = Math.tan(halfV);
+    // Landscape stream: SENSOR_HFOV spans vw (the long axis).
+    // The square crop height = vh  →  FOV_crop = VFOV of stream.
+    halfFov = Math.atan(Math.tan(SENSOR_HFOV / 2) * (vh / vw));
   }
+  const tanHalfH = Math.tan(halfFov);
+  const tanHalfV = Math.tan(halfFov);
 
   const n = photos.length;
   // Build a texture array (all layers RESIZED square).
@@ -702,28 +721,28 @@ export async function stitchPanorama(
   const yawArr: number[] = [];
   const pitchArr: number[] = [];
   const rollArr: number[] = [];
-  const texRotArr: number[] = [];
 
   photos.forEach((p, i) => {
     yawArr.push((p.yaw * Math.PI) / 180);
     pitchArr.push((p.pitch * Math.PI) / 180);
-    rollArr.push(0); // Ignore unstable reported roll to prevent 180-deg flip
+    rollArr.push(0); // Ignore unstable roll sensor to prevent 180° flips
 
-    // Determine texture rotation to make portrait images upright
-    let rot = 0;
-    if (p.screenAngle === 0) {
-      // Portrait screen: needs 90-degree rotation clockwise to compensate
-      rot = Math.PI / 2;
-    } else if (p.screenAngle === 90) {
-      rot = 0;
-    } else if (p.screenAngle === 270 || p.screenAngle === -90) {
-      rot = Math.PI;
-    } else if (p.screenAngle === 180) {
-      rot = -Math.PI / 2;
-    }
-    texRotArr.push(rot);
+    // Pre-rotate image pixels to compensate for screen/sensor orientation.
+    // The browser video stream is already oriented correctly for the current
+    // screen angle, so we only need to correct when NOT in landscape (90°).
+    // screenAngle = 0  → portrait (phone upright): rotate +90° CCW so that
+    //   the landscape sensor data fills the square upright.
+    // screenAngle = 90 → standard landscape: no rotation needed.
+    // screenAngle = 180 → upside-down portrait: rotate -90° (270°).
+    // screenAngle = 270 → reverse landscape: rotate 180°.
+    let rotateDeg = 0;
+    const sa = ((p.screenAngle % 360) + 360) % 360;
+    if (sa === 0)   rotateDeg = 90;   // portrait
+    else if (sa === 90)  rotateDeg = 0;   // landscape (normal)
+    else if (sa === 180) rotateDeg = -90; // upside-down portrait
+    else if (sa === 270) rotateDeg = 180; // reverse landscape
 
-    const px = getPixels(p.bitmap, RESIZED);
+    const px = getPixels(p.bitmap, RESIZED, rotateDeg);
     gl.texSubImage3D(
       gl.TEXTURE_2D_ARRAY, 0, 0, 0, i, RESIZED, RESIZED, 1,
       gl.RGBA, gl.UNSIGNED_BYTE, px,
@@ -749,7 +768,6 @@ export async function stitchPanorama(
   uniform float u_yaw[${n}];
   uniform float u_pitch[${n}];
   uniform float u_roll[${n}];
-  uniform float u_texRot[${n}];
   uniform float u_tanH;
   uniform float u_tanV;
   const float PI = 3.141592653589793;
@@ -773,14 +791,10 @@ export async function stitchPanorama(
       float xn = cam.x / cam.z;
       float yn = cam.y / cam.z;
       if (abs(xn) > u_tanH || abs(yn) > u_tanV) continue;
-      float tu = xn / (2.0 * u_tanH);
-      float tv = yn / (2.0 * u_tanV);
-      float c = cos(u_texRot[i]);
-      float s = sin(u_texRot[i]);
-      float u = (tu * c - tv * s) + 0.5;
-      float v = (tu * s + tv * c) + 0.5;
+      float u = xn / (2.0 * u_tanH) + 0.5;
+      float v = yn / (2.0 * u_tanV) + 0.5;
       vec3 col = texture(u_tex, vec3(u, v, float(i))).rgb;
-      // quality: best near the photo center
+      // quality: prefer pixels nearest to photo center
       float dx = abs(xn) / u_tanH;
       float dy = abs(yn) / u_tanV;
       float dist = sqrt(dx * dx + dy * dy);
@@ -806,7 +820,6 @@ export async function stitchPanorama(
   gl.uniform1fv(gl.getUniformLocation(prog, 'u_yaw'), yawArr);
   gl.uniform1fv(gl.getUniformLocation(prog, 'u_pitch'), pitchArr);
   gl.uniform1fv(gl.getUniformLocation(prog, 'u_roll'), rollArr);
-  gl.uniform1fv(gl.getUniformLocation(prog, 'u_texRot'), texRotArr);
   gl.uniform1i(gl.getUniformLocation(prog, 'u_tex'), 0);
 
   gl.viewport(0, 0, outW, outH);

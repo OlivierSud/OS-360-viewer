@@ -447,6 +447,55 @@ const PanoCapture: React.FC<PanoCaptureProps> = ({ onCancel, onComplete }) => {
       });
 
       projectedRef.current = newProjected;
+
+      // ── Radar mini-map (top-right) ─────────────────────────────
+      const radarSize = 60;
+      const rx = W - radarSize - 16;
+      const ry = 56 + radarSize; // below header bar
+
+      ctx.save();
+      // Backdrop
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(rx, ry, radarSize, 0, 2 * Math.PI);
+      ctx.fill(); ctx.stroke();
+      // Concentric rings (pitch rows)
+      ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+      ctx.beginPath();
+      ctx.arc(rx, ry, radarSize * 0.38, 0, 2 * Math.PI);
+      ctx.arc(rx, ry, radarSize * 0.72, 0, 2 * Math.PI);
+      ctx.stroke();
+      // Camera FOV sweep
+      ctx.fillStyle = 'rgba(255,255,255,0.07)';
+      const sweepRad = orientation.yaw * deg2rad - Math.PI / 2;
+      ctx.beginPath(); ctx.moveTo(rx, ry);
+      ctx.arc(rx, ry, radarSize, sweepRad - 0.28, sweepRad + 0.28);
+      ctx.closePath(); ctx.fill();
+      // All grid points
+      grid.current.forEach((pt, index) => {
+        const ptYawRad = pt.yaw * deg2rad - Math.PI / 2;
+        let df = 0.56;
+        if (pt.pitch === -30) df = 0.86;
+        if (pt.pitch === 30)  df = 0.26;
+        const ptx = rx + Math.cos(ptYawRad) * (radarSize * df);
+        const pty = ry + Math.sin(ptYawRad) * (radarSize * df);
+        const isCapturedR = !!photos[index];
+        const isCurrentR  = index === currentIndex;
+        if (isCurrentR) {
+          ctx.fillStyle = '#ff9800';
+          const pulse = 2.5 + Math.abs(Math.sin(Date.now() / 150)) * 2;
+          ctx.beginPath(); ctx.arc(ptx, pty, pulse, 0, 2 * Math.PI); ctx.fill();
+        } else if (isCapturedR) {
+          ctx.fillStyle = '#28a745';
+          ctx.beginPath(); ctx.arc(ptx, pty, 3, 0, 2 * Math.PI); ctx.fill();
+        } else {
+          ctx.fillStyle = 'rgba(255,255,255,0.28)';
+          ctx.beginPath(); ctx.arc(ptx, pty, 2, 0, 2 * Math.PI); ctx.fill();
+        }
+      });
+      ctx.restore();
+
       rafId = requestAnimationFrame(updateUI);
     };
 
@@ -783,20 +832,10 @@ export async function stitchPanorama(
     pitchArr.push((p.pitch * Math.PI) / 180);
     rollArr.push(0); // Ignore unstable roll sensor to prevent 180° flips
 
-    // Pre-rotate image pixels to compensate for screen/sensor orientation.
-    // The browser video stream is already oriented correctly for the current
-    // screen angle, so we only need to correct when NOT in landscape (90°).
-    // screenAngle = 0  → portrait (phone upright): rotate +90° CCW so that
-    //   the landscape sensor data fills the square upright.
-    // screenAngle = 90 → standard landscape: no rotation needed.
-    // screenAngle = 180 → upside-down portrait: rotate -90° (270°).
-    // screenAngle = 270 → reverse landscape: rotate 180°.
-    let rotateDeg = 0;
-    const sa = ((p.screenAngle % 360) + 360) % 360;
-    if (sa === 0)   rotateDeg = 90;   // portrait
-    else if (sa === 90)  rotateDeg = 0;   // landscape (normal)
-    else if (sa === 180) rotateDeg = -90; // upside-down portrait
-    else if (sa === 270) rotateDeg = 180; // reverse landscape
+    // The bitmap was captured from a canvas that already shows the correctly-oriented
+    // browser video stream. The browser handles orientation internally, so NO additional
+    // rotation is needed here — applying one would rotate the image a second time.
+    const rotateDeg = 0;
 
     const px = getPixels(p.bitmap, RESIZED, rotateDeg);
     gl.texSubImage3D(

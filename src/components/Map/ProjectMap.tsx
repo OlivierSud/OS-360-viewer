@@ -25,7 +25,7 @@ const FitBounds: React.FC<{ bounds: L.LatLngBoundsExpression; firstFitRef: React
     // zoom levels — otherwise getBoundsZoom / circlePadding read a 0px size.
     const apply = () => {
       if (fixedMinimap && mode === 'viewer') {
-        const fitZoom = map.getBoundsZoom(bounds, false, L.point(10, 10));
+        const fitZoom = map.getBoundsZoom(bounds, false, L.point(0, 0));
         map.setMinZoom(fitZoom);
         map.setMaxZoom(fitZoom);
         try {

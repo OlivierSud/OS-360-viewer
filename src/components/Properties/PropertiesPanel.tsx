@@ -524,6 +524,41 @@ const ProjectSettingsPanel: React.FC<{ mobileOpen?: boolean; onMobileClose?: () 
             Ajuste toute la carte au centre de la minimap sans débordement, et bloque le zoom et le déplacement.
           </div>
         </div>
+
+        {/* Minimap shape option */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px' }}>
+          <div style={{ fontSize: '0.8rem', color: '#ccc', fontWeight: 500 }}>
+            Forme de la minimap :
+          </div>
+          <div style={{ display: 'flex', gap: '14px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.82rem', color: '#e0e0e0' }}>
+              <input
+                type="radio"
+                name="minimapShape"
+                value="round"
+                checked={(mapConfig?.minimapShape ?? 'round') === 'round'}
+                onChange={() => {
+                  if (mapConfig) setMapConfig({ ...mapConfig, minimapShape: 'round' });
+                }}
+                style={{ accentColor: '#007acc', cursor: 'pointer' }}
+              />
+              ⚪ Ronde
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.82rem', color: '#e0e0e0' }}>
+              <input
+                type="radio"
+                name="minimapShape"
+                value="rectangular"
+                checked={mapConfig?.minimapShape === 'rectangular'}
+                onChange={() => {
+                  if (mapConfig) setMapConfig({ ...mapConfig, minimapShape: 'rectangular' });
+                }}
+                style={{ accentColor: '#007acc', cursor: 'pointer' }}
+              />
+              ▭ Rectangulaire
+            </label>
+          </div>
+        </div>
       </div>
 
       {/* ── Viewer link ── */}

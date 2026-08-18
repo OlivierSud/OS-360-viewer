@@ -5,6 +5,7 @@ export interface MapConfig {
   height?: number;
   center?: [number, number];
   fixedMinimap?: boolean;
+  minimapShape?: 'round' | 'rectangular';
 }
 
 export interface ProjectMetadata {

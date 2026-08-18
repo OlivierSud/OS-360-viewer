@@ -214,39 +214,43 @@ const ViewerPage: React.FC = () => {
               radius = 34.09% of the wrapper = the circle's edge).
               Left arc (top→bottom): +, −, recentrer, agrandir.
               Top-right of the circle: close (✕) only. */}
-          <button
-            className="mm-btn mm-zoom-in"
-            onClick={() => mapRef.current?.zoomIn()}
-            title="Zoom avant"
-            style={{ ...mapBtnStyle, position: 'absolute', left: '16%', top: '26%', transform: 'translate(-50%, -50%)', width: '42px', height: '42px', fontSize: '1.3rem', borderRadius: '50%', zIndex: 1100 }}
-          >
-            +
-          </button>
-          <button
-            className="mm-btn mm-zoom-out"
-            onClick={() => mapRef.current?.zoomOut()}
-            title="Zoom arrière"
-            style={{ ...mapBtnStyle, position: 'absolute', left: '8%', top: '50%', transform: 'translate(-50%, -50%)', width: '42px', height: '42px', fontSize: '1.3rem', borderRadius: '50%', zIndex: 1100 }}
-          >
-            −
-          </button>
-          <button
-            className="mm-btn mm-recenter"
-            onClick={() => {
-              const state = useProjectStore.getState();
-              const activeScene = state.scenes.find(s => s.id === state.selectedSceneId);
-              if (activeScene && mapRef.current) {
-                mapRef.current.panTo([activeScene.position.y, activeScene.position.x]);
-              }
-            }}
-            title="Recentrer sur le viewpoint actif"
-            style={{ ...mapBtnStyle, position: 'absolute', left: '16%', top: '74%', transform: 'translate(-50%, -50%)', width: '42px', height: '42px', borderRadius: '50%', zIndex: 1100 }}
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 2C8.5 2 5.5 5 5.5 8.5c0 4.5 6.5 10 6.5 10s6.5-5.5 6.5-10C18.5 5 15.5 2 12 2zm0 10c-1.93 0-3.5-1.57-3.5-3.5S10.07 5 12 5s3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z" fill="currentColor" stroke="none" />
-              <ellipse cx="12" cy="20" rx="6" ry="2" stroke="currentColor" stroke-width="2" fill="none" />
-            </svg>
-          </button>
+          {!project?.map?.fixedMinimap && (
+            <>
+              <button
+                className="mm-btn mm-zoom-in"
+                onClick={() => mapRef.current?.zoomIn()}
+                title="Zoom avant"
+                style={{ ...mapBtnStyle, position: 'absolute', left: '16%', top: '26%', transform: 'translate(-50%, -50%)', width: '42px', height: '42px', fontSize: '1.3rem', borderRadius: '50%', zIndex: 1100 }}
+              >
+                +
+              </button>
+              <button
+                className="mm-btn mm-zoom-out"
+                onClick={() => mapRef.current?.zoomOut()}
+                title="Zoom arrière"
+                style={{ ...mapBtnStyle, position: 'absolute', left: '8%', top: '50%', transform: 'translate(-50%, -50%)', width: '42px', height: '42px', fontSize: '1.3rem', borderRadius: '50%', zIndex: 1100 }}
+              >
+                −
+              </button>
+              <button
+                className="mm-btn mm-recenter"
+                onClick={() => {
+                  const state = useProjectStore.getState();
+                  const activeScene = state.scenes.find(s => s.id === state.selectedSceneId);
+                  if (activeScene && mapRef.current) {
+                    mapRef.current.panTo([activeScene.position.y, activeScene.position.x]);
+                  }
+                }}
+                title="Recentrer sur le viewpoint actif"
+                style={{ ...mapBtnStyle, position: 'absolute', left: '16%', top: '74%', transform: 'translate(-50%, -50%)', width: '42px', height: '42px', borderRadius: '50%', zIndex: 1100 }}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 2C8.5 2 5.5 5 5.5 8.5c0 4.5 6.5 10 6.5 10s6.5-5.5 6.5-10C18.5 5 15.5 2 12 2zm0 10c-1.93 0-3.5-1.57-3.5-3.5S10.07 5 12 5s3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z" fill="currentColor" stroke="none" />
+                  <ellipse cx="12" cy="20" rx="6" ry="2" stroke="currentColor" stroke-width="2" fill="none" />
+                </svg>
+              </button>
+            </>
+          )}
           <button
             className="mm-btn mm-expand"
             onClick={() => setMapExpanded(true)}
@@ -310,36 +314,40 @@ const ViewerPage: React.FC = () => {
             >
               ✕
             </button>
-            <button
-              onClick={() => mapRef.current?.zoomIn()}
-              title="Zoom avant"
-              style={mapBtnStyle}
-            >
-              +
-            </button>
-            <button
-              onClick={() => mapRef.current?.zoomOut()}
-              title="Zoom arrière"
-              style={mapBtnStyle}
-            >
-              −
-            </button>
-            <button
-              onClick={() => {
-                const state = useProjectStore.getState();
-                const activeScene = state.scenes.find(s => s.id === state.selectedSceneId);
-                if (activeScene && mapRef.current) {
-                  mapRef.current.panTo([activeScene.position.y, activeScene.position.x]);
-                }
-              }}
-              title="Recentrer sur le viewpoint actif"
-              style={mapBtnStyle}
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 2C8.5 2 5.5 5 5.5 8.5c0 4.5 6.5 10 6.5 10s6.5-5.5 6.5-10C18.5 5 15.5 2 12 2zm0 10c-1.93 0-3.5-1.57-3.5-3.5S10.07 5 12 5s3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z" fill="currentColor" stroke="none" />
-                <ellipse cx="12" cy="20" rx="6" ry="2" stroke="currentColor" stroke-width="2" fill="none" />
-              </svg>
-            </button>
+            {!project?.map?.fixedMinimap && (
+              <>
+                <button
+                  onClick={() => mapRef.current?.zoomIn()}
+                  title="Zoom avant"
+                  style={mapBtnStyle}
+                >
+                  +
+                </button>
+                <button
+                  onClick={() => mapRef.current?.zoomOut()}
+                  title="Zoom arrière"
+                  style={mapBtnStyle}
+                >
+                  −
+                </button>
+                <button
+                  onClick={() => {
+                    const state = useProjectStore.getState();
+                    const activeScene = state.scenes.find(s => s.id === state.selectedSceneId);
+                    if (activeScene && mapRef.current) {
+                      mapRef.current.panTo([activeScene.position.y, activeScene.position.x]);
+                    }
+                  }}
+                  title="Recentrer sur le viewpoint actif"
+                  style={mapBtnStyle}
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 2C8.5 2 5.5 5 5.5 8.5c0 4.5 6.5 10 6.5 10s6.5-5.5 6.5-10C18.5 5 15.5 2 12 2zm0 10c-1.93 0-3.5-1.57-3.5-3.5S10.07 5 12 5s3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z" fill="currentColor" stroke="none" />
+                    <ellipse cx="12" cy="20" rx="6" ry="2" stroke="currentColor" stroke-width="2" fill="none" />
+                  </svg>
+                </button>
+              </>
+            )}
             <button
               onClick={() => setMapExpanded(false)}
               title="Réduire le plan"

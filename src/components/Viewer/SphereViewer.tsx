@@ -832,22 +832,28 @@ const SphereViewer: React.FC = () => {
   // Build the panorama config: a 360° video when available, otherwise the image.
   const getPanorama = (scene: typeof selectedScene) => {
     if (scene?.video) return { source: scene.video };
-    if (scene?.panoramaType === 'horizontal' && scene.image) {
+    if (scene?.image) {
       return {
         path: scene.image,
         data: (img: HTMLImageElement) => {
+          const isHoriz = scene.panoramaType === 'horizontal' || (scene.panoramaType !== 'spherical' && img.width / img.height > 2.2);
+
           const fullWidth = img.width;
-          const fullHeight = Math.round(img.width / 2);
+          const fullHeight = isHoriz ? Math.round(img.width / 2) : img.height;
           const croppedWidth = img.width;
           const croppedHeight = img.height;
-          const croppedY = Math.round((fullHeight - croppedHeight) / 2);
+          const croppedY = isHoriz ? Math.round((fullHeight - croppedHeight) / 2) : 0;
 
           if (viewerRef.current) {
             try {
               const v = viewerRef.current as any;
-              v.setOption('pitchRange', [-0.0001, 0.0001]);
-              const currentPos = v.getPosition();
-              v.rotate({ yaw: currentPos?.yaw ?? 0, pitch: 0 });
+              if (isHoriz) {
+                v.setOption('pitchRange', [-0.0001, 0.0001]);
+                const currentPos = v.getPosition();
+                v.rotate({ yaw: currentPos?.yaw ?? 0, pitch: 0 });
+              } else {
+                v.setOption('pitchRange', [-Math.PI / 2, Math.PI / 2]);
+              }
             } catch { /* ignore */ }
           }
 
@@ -862,7 +868,7 @@ const SphereViewer: React.FC = () => {
         },
       };
     }
-    return scene?.image;
+    return undefined;
   };
 
   // (Re)create the PSV viewer instance with the current scene.

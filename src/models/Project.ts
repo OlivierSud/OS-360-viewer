@@ -4,6 +4,7 @@ export interface MapConfig {
   width?: number;
   height?: number;
   center?: [number, number];
+  fixedMinimap?: boolean;
 }
 
 export interface ProjectMetadata {

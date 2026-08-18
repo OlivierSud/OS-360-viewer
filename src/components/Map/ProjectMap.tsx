@@ -18,12 +18,29 @@ const circlePadding = (map: L.Map): L.Point => {
   return L.point(-pad, -pad);
 };
 
-const FitBounds: React.FC<{ bounds: L.LatLngBoundsExpression; firstFitRef: React.MutableRefObject<boolean>; mode?: 'editor' | 'viewer' }> = ({ bounds, firstFitRef, mode }) => {
+const FitBounds: React.FC<{ bounds: L.LatLngBoundsExpression; firstFitRef: React.MutableRefObject<boolean>; mode?: 'editor' | 'viewer'; fixedMinimap?: boolean }> = ({ bounds, firstFitRef, mode, fixedMinimap }) => {
   const map = useMap();
   useEffect(() => {
     // Wait until the map is laid out (so its size is known) before computing
     // zoom levels — otherwise getBoundsZoom / circlePadding read a 0px size.
     const apply = () => {
+      if (fixedMinimap && mode === 'viewer') {
+        const fitZoom = map.getBoundsZoom(bounds, false, L.point(10, 10));
+        map.setMinZoom(fitZoom);
+        map.setMaxZoom(fitZoom);
+        try {
+          map.dragging.disable();
+          map.touchZoom.disable();
+          map.doubleClickZoom.disable();
+          map.scrollWheelZoom.disable();
+          map.boxZoom.disable();
+          map.keyboard.disable();
+        } catch { /* ignore */ }
+        const center = L.latLngBounds(bounds as any).getCenter();
+        map.setView(center, fitZoom, { animate: false });
+        return;
+      }
+
       // fitZoom = zoom at which the plan exactly fills the square container.
       const fitZoom = map.getBoundsZoom(bounds, false, L.point(30, 30));
       // In the viewer we start well zoomed-out so the WHOLE plan (square) is
@@ -55,11 +72,11 @@ const FitBounds: React.FC<{ bounds: L.LatLngBoundsExpression; firstFitRef: React
     // on the starting viewpoint by RecenterOnProjectChange when the project
     // changes (e.g. via a Portal). We only keep the zoom bounds up to date.
     return () => { clearTimeout(t); ro.disconnect(); };
-  }, [map, bounds, firstFitRef, mode]);
+  }, [map, bounds, firstFitRef, mode, fixedMinimap]);
   return null;
 };
 
-const FitGeoBounds: React.FC<{ scenes: Scene[]; firstFitRef: React.MutableRefObject<boolean>; mode?: 'editor' | 'viewer' }> = ({ scenes, firstFitRef, mode }) => {
+const FitGeoBounds: React.FC<{ scenes: Scene[]; firstFitRef: React.MutableRefObject<boolean>; mode?: 'editor' | 'viewer'; fixedMinimap?: boolean }> = ({ scenes, firstFitRef, mode, fixedMinimap }) => {
   const map = useMap();
   useEffect(() => {
     const applyFit = () => {
@@ -77,6 +94,24 @@ const FitGeoBounds: React.FC<{ scenes: Scene[]; firstFitRef: React.MutableRefObj
       const minLon = Math.min(...lons);
       const maxLon = Math.max(...lons);
 
+      const bounds = L.latLngBounds([minLat, minLon], [maxLat, maxLon]);
+
+      if (fixedMinimap && mode === 'viewer') {
+        const fitZoom = map.getBoundsZoom(bounds, false, L.point(20, 20));
+        map.setMinZoom(fitZoom);
+        map.setMaxZoom(fitZoom);
+        try {
+          map.dragging.disable();
+          map.touchZoom.disable();
+          map.doubleClickZoom.disable();
+          map.scrollWheelZoom.disable();
+          map.boxZoom.disable();
+          map.keyboard.disable();
+        } catch { /* ignore */ }
+        map.setView(bounds.getCenter(), fitZoom, { animate: false });
+        return;
+      }
+
       // If there is only one viewpoint, or all viewpoints are at the same spot
       if (minLat === maxLat && minLon === maxLon) {
         map.setMinZoom(8);
@@ -89,7 +124,6 @@ const FitGeoBounds: React.FC<{ scenes: Scene[]; firstFitRef: React.MutableRefObj
         return;
       }
 
-      const bounds = L.latLngBounds([minLat, minLon], [maxLat, maxLon]);
       const fitZoom = map.getBoundsZoom(bounds, false, mode === 'viewer' ? circlePadding(map) : L.point(50, 50));
       // Allow zooming out 5 levels further than the viewpoints bounds for geographic map
       const minZoomLevel = Math.max(1, fitZoom - 5);
@@ -119,7 +153,7 @@ const FitGeoBounds: React.FC<{ scenes: Scene[]; firstFitRef: React.MutableRefObj
     if (parent) ro.observe(parent);
     const t = setTimeout(refit, 300);
     return () => { clearTimeout(t); ro.disconnect(); };
-  }, [map, scenes, firstFitRef, mode]);
+  }, [map, scenes, firstFitRef, mode, fixedMinimap]);
   return null;
 };
 
@@ -152,12 +186,14 @@ const KeepMapSize: React.FC = () => {
 };
 
 
-const CenterOnSelected: React.FC = () => {
+const CenterOnSelected: React.FC<{ fixedMinimap?: boolean }> = ({ fixedMinimap }) => {
   const map = useMap();
   const selectedSceneId = useProjectStore((state) => state.selectedSceneId);
+  const mode = useProjectStore((state) => state.mode);
   const firstRun = useRef(true);
 
   useEffect(() => {
+    if (fixedMinimap && mode === 'viewer') return;
     // Skip the very first selection (initial load) so that the initial overview
     // showing the entire map at minZoom is not immediately overridden.
     if (firstRun.current) {
@@ -169,18 +205,19 @@ const CenterOnSelected: React.FC = () => {
     if (scene) {
       map.panTo([scene.position.y, scene.position.x]);
     }
-  }, [map, selectedSceneId]);
+  }, [map, selectedSceneId, fixedMinimap, mode]);
 
   return null;
 };
 
-const RecenterOnProjectChange: React.FC = () => {
+const RecenterOnProjectChange: React.FC<{ fixedMinimap?: boolean }> = ({ fixedMinimap }) => {
   const map = useMap();
   const currentProjectId = useProjectStore((state) => state.currentProjectId);
   const selectedSceneId = useProjectStore((state) => state.selectedSceneId);
   const prevProjectId = useRef<string | null>(null);
 
   useEffect(() => {
+    if (fixedMinimap && useProjectStore.getState().mode === 'viewer') return;
     // Only relevant in the viewer (e.g. navigating between projects via a Portal).
     if (useProjectStore.getState().mode !== 'viewer') return;
     // Skip the very first project load: FitBounds already fitted the whole map.
@@ -196,7 +233,7 @@ const RecenterOnProjectChange: React.FC = () => {
     if (scene) {
       map.panTo([scene.position.y, scene.position.x]);
     }
-  }, [map, currentProjectId, selectedSceneId]);
+  }, [map, currentProjectId, selectedSceneId, fixedMinimap]);
   return null;
 };
 
@@ -643,6 +680,16 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, mode: 
     addScene(newScene);
     selectScene(newScene.id);
     
+    if (!isVideo) {
+      const img = new Image();
+      img.onload = () => {
+        if (img.width / img.height > 2.5) {
+          updateScene(sceneId, { panoramaType: 'horizontal' });
+        }
+      };
+      img.src = url;
+    }
+
     setIsPlacing(false);
     setPendingPosition(null);
     if (fileInputRef.current) {
@@ -726,16 +773,19 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, mode: 
     return null;
   };
 
+  const activeSceneId = useProjectStore((state) => state.activeSceneId);
+  const currentActiveSceneId = activeSceneId ?? selectedSceneId;
+
   // Animate the active marker along the path (straight line between the
   // previous and the new viewpoint) while a scene is loading. The travel
   // marker reaches its destination exactly when the scene is loaded.
   useEffect(() => {
     const prevId = prevSceneIdRef.current;
-    prevSceneIdRef.current = selectedSceneId;
-    if (!prevId || prevId === selectedSceneId) return;
+    prevSceneIdRef.current = currentActiveSceneId;
+    if (!prevId || prevId === currentActiveSceneId) return;
 
     const fromScene = scenes.find((s) => s.id === prevId);
-    const toScene = scenes.find((s) => s.id === selectedSceneId);
+    const toScene = scenes.find((s) => s.id === currentActiveSceneId);
     if (!fromScene || !toScene) return;
 
     const from: [number, number] = [fromScene.position.y, fromScene.position.x];
@@ -850,14 +900,18 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, mode: 
             key="custom-map"
             crs={L.CRS.Simple} 
             style={{ height: '100%', width: '100%' }}
-            zoomControl={!hideZoomControl}
+            zoomControl={!hideZoomControl && !(mapConfig?.fixedMinimap && modeProp === 'viewer')}
+            dragging={!(mapConfig?.fixedMinimap && modeProp === 'viewer')}
+            scrollWheelZoom={!(mapConfig?.fixedMinimap && modeProp === 'viewer')}
+            doubleClickZoom={!(mapConfig?.fixedMinimap && modeProp === 'viewer')}
+            touchZoom={!(mapConfig?.fixedMinimap && modeProp === 'viewer')}
           >
             {mapRef && <MapRefBridge mapRef={mapRef} />}
             <KeepMapSize />
             <MapEvents />
-            <FitBounds bounds={bounds} firstFitRef={firstFitRef} mode={modeProp} />
-            <CenterOnSelected />
-            <RecenterOnProjectChange />
+            <FitBounds bounds={bounds} firstFitRef={firstFitRef} mode={modeProp} fixedMinimap={mapConfig?.fixedMinimap} />
+            <CenterOnSelected fixedMinimap={mapConfig?.fixedMinimap} />
+            <RecenterOnProjectChange fixedMinimap={mapConfig?.fixedMinimap} />
             <ImageOverlay
               url={mapConfig.image!}
               bounds={bounds}
@@ -1073,14 +1127,18 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, mode: 
             key="geo-map"
             center={mapConfig.center ?? [48.8566, 2.3522]}
             style={{ height: '100%', width: '100%' }}
-            zoomControl={!hideZoomControl}
+            zoomControl={!hideZoomControl && !(mapConfig?.fixedMinimap && modeProp === 'viewer')}
+            dragging={!(mapConfig?.fixedMinimap && modeProp === 'viewer')}
+            scrollWheelZoom={!(mapConfig?.fixedMinimap && modeProp === 'viewer')}
+            doubleClickZoom={!(mapConfig?.fixedMinimap && modeProp === 'viewer')}
+            touchZoom={!(mapConfig?.fixedMinimap && modeProp === 'viewer')}
           >
             {mapRef && <MapRefBridge mapRef={mapRef} />}
             <KeepMapSize />
             <MapEvents />
-            <FitGeoBounds scenes={scenes} firstFitRef={firstFitRef} mode={modeProp} />
-            <CenterOnSelected />
-            <RecenterOnProjectChange />
+            <FitGeoBounds scenes={scenes} firstFitRef={firstFitRef} mode={modeProp} fixedMinimap={mapConfig?.fixedMinimap} />
+            <CenterOnSelected fixedMinimap={mapConfig?.fixedMinimap} />
+            <RecenterOnProjectChange fixedMinimap={mapConfig?.fixedMinimap} />
             {mode === 'editor' && <GeoSearch />}
             <TileLayer
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'

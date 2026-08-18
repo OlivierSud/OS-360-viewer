@@ -1,10 +1,48 @@
 import React, { useState } from 'react';
 import { useProjectStore } from '../../state/projectStore';
 
+const IconGoToBadge: React.FC<{ active?: boolean }> = ({ active }) => (
+  <svg
+    width="32"
+    height="17"
+    viewBox="0 0 64 34"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    style={{ display: 'block', opacity: active ? 1 : 0.85, transition: 'all 0.15s ease' }}
+  >
+    {/* Speed lines on left */}
+    <rect x="2" y="7" width="10" height="4" rx="2" fill={active ? '#4fc3f7' : '#29b6f6'} />
+    <rect x="0" y="15" width="14" height="4" rx="2" fill={active ? '#4fc3f7' : '#29b6f6'} />
+    <rect x="2" y="23" width="10" height="4" rx="2" fill={active ? '#4fc3f7' : '#29b6f6'} />
+
+    {/* Main blue arrow body */}
+    <path
+      d="M16 4 H42 L58 17 L42 30 H16 C13.79 30 12 28.21 12 26 V8 C12 5.79 13.79 4 16 4 Z"
+      fill={active ? '#007acc' : '#0288d1'}
+    />
+
+    {/* Text GO! */}
+    <text
+      x="31"
+      y="21.5"
+      fill="white"
+      fontSize="13"
+      fontWeight="900"
+      fontFamily="system-ui, -apple-system, sans-serif"
+      textAnchor="middle"
+      letterSpacing="0.02em"
+    >
+      GO!
+    </text>
+  </svg>
+);
+
 const Sidebar: React.FC = () => {
   const scenes = useProjectStore((state) => state.scenes);
   const selectScene = useProjectStore((state) => state.selectScene);
+  const setActiveScene = useProjectStore((state) => state.setActiveScene);
   const selectedSceneId = useProjectStore((state) => state.selectedSceneId);
+  const activeSceneId = useProjectStore((state) => state.activeSceneId);
   const updateScene = useProjectStore((state) => state.updateScene);
   const removeScene = useProjectStore((state) => state.removeScene);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -76,6 +114,7 @@ const Sidebar: React.FC = () => {
       <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
         {scenes.map((scene) => {
           const isSelected = scene.id === selectedSceneId;
+          const isActive3D = scene.id === (activeSceneId ?? selectedSceneId);
           const isEditing = scene.id === editingId;
           const isConfirmingDelete = scene.id === confirmDeleteId;
 
@@ -93,6 +132,7 @@ const Sidebar: React.FC = () => {
                 justifyContent: 'space-between',
                 borderRadius: '4px',
                 marginBottom: '2px',
+                borderLeft: isActive3D ? '3px solid #007acc' : '3px solid transparent',
               }}
             >
               {/* Left: title / edit input / confirm delete */}
@@ -136,9 +176,28 @@ const Sidebar: React.FC = () => {
                   </button>
                 </div>
               ) : (
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-                  {scene.title}
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden', flex: 1 }}>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {scene.title}
+                  </span>
+                  {isActive3D && (
+                    <span
+                      style={{
+                        fontSize: '0.65rem',
+                        fontWeight: 700,
+                        backgroundColor: '#007acc',
+                        color: 'white',
+                        padding: '1px 5px',
+                        borderRadius: '3px',
+                        letterSpacing: '0.03em',
+                        flexShrink: 0,
+                      }}
+                      title="Vue 360° active"
+                    >
+                      360°
+                    </span>
+                  )}
+                </div>
               )}
 
               {/* Right: action buttons (hidden during edit or confirm) */}
@@ -168,6 +227,22 @@ const Sidebar: React.FC = () => {
                     title="Renommer le viewpoint"
                   >
                     ✏️
+                  </button>
+
+                  {/* Go to 360 View */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setActiveScene(scene.id);
+                      setMobileOpen(false);
+                    }}
+                    style={{
+                      background: 'none', border: 'none', cursor: 'pointer', padding: '2px 3px', lineHeight: 0,
+                      transition: 'opacity 0.2s',
+                    }}
+                    title="Afficher dans la vue 360° (Go to)"
+                  >
+                    <IconGoToBadge active={isActive3D} />
                   </button>
 
                   {/* Delete */}

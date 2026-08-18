@@ -26,6 +26,7 @@ const SphereViewer: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<Viewer | null>(null);
   const currentIsVideoRef = useRef(false);
+  const currentPanoramaTypeRef = useRef<'spherical' | 'horizontal'>('spherical');
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const navbarIntervalRef = useRef<number | null>(null);
   // The whole VR interface (reticles + per-eye marker overlay) is built as a
@@ -148,6 +149,7 @@ const SphereViewer: React.FC = () => {
     );
   };
 
+  const activeSceneId = useProjectStore((state) => state.activeSceneId);
   const selectedSceneId = useProjectStore((state) => state.selectedSceneId);
   const selectedHotspotId = useProjectStore((state) => state.selectedHotspotId);
   const scenes = useProjectStore((state) => state.scenes);
@@ -157,6 +159,8 @@ const SphereViewer: React.FC = () => {
   const mode = useProjectStore((state) => state.mode);
   const isMovingHotspot = useProjectStore((state) => state.isMovingHotspot);
   const setIsMovingHotspot = useProjectStore((state) => state.setIsMovingHotspot);
+  const isMovingLink = useProjectStore((state) => state.isMovingLink);
+  const setIsMovingLink = useProjectStore((state) => state.setIsMovingLink);
   const isDeletingHotspot = useProjectStore((state) => state.isDeletingHotspot);
   const setIsDeletingHotspot = useProjectStore((state) => state.setIsDeletingHotspot);
   const setSceneLoading = useProjectStore((state) => state.setSceneLoading);
@@ -165,7 +169,10 @@ const SphereViewer: React.FC = () => {
   // editor the controls (Add Hotspot, navigation links) keep the default blue.
   const accentColor = mode === 'viewer' ? getAccentColor(project) : '#007acc';
 
-  const selectedScene = scenes.find(s => s.id === selectedSceneId);
+  const currentSceneId = activeSceneId ?? selectedSceneId;
+  const selectedScene = scenes.find(s => s.id === currentSceneId);
+  const selectedSceneRef = useRef(selectedScene);
+  selectedSceneRef.current = selectedScene;
 
   // VR mode (mobile) is only available in the public viewer, and only when the
   // project explicitly enables it. Gyroscope lets the user look around by moving
@@ -324,11 +331,12 @@ const SphereViewer: React.FC = () => {
   // Same behaviour as clicking a marker (link navigation or hotspot popup).
   const triggerMarker = (data: { target?: string; hotspotId?: string }) => {
     if (data.target) {
-      useProjectStore.getState().selectScene(data.target);
+      useProjectStore.getState().setActiveScene(data.target);
     } else if (data.hotspotId) {
       const state = useProjectStore.getState();
       if (state.isDeletingHotspot) {
-        if (state.selectedSceneId) state.removeHotspot(state.selectedSceneId, data.hotspotId);
+        const activeId = state.activeSceneId ?? state.selectedSceneId;
+        if (activeId) state.removeHotspot(activeId, data.hotspotId);
         return;
       }
       state.selectHotspot(data.hotspotId);
@@ -538,7 +546,8 @@ const SphereViewer: React.FC = () => {
         if (!hsPos || typeof hsPos.yaw !== 'number') {
           // Fall back to the store's hotspot coordinates.
           const st = useProjectStore.getState();
-          const sc = st.scenes.find((s: any) => s.id === st.selectedSceneId);
+          const activeId = st.activeSceneId ?? st.selectedSceneId;
+          const sc = st.scenes.find((s: any) => s.id === activeId);
           const hp = sc?.hotspots?.find((h: any) => h.id === openId);
           if (hp) hsPos = { yaw: hp.yaw, pitch: hp.pitch } as any;
         }
@@ -546,7 +555,8 @@ const SphereViewer: React.FC = () => {
           // Build the card HTML once (when the open hotspot changes).
           if (!vrPopupElsRef.current || vrPopupElsRef.current.left.dataset.hid !== openId) {
             const st = useProjectStore.getState();
-            const sc = st.scenes.find((s: any) => s.id === st.selectedSceneId);
+            const activeId = st.activeSceneId ?? st.selectedSceneId;
+            const sc = st.scenes.find((s: any) => s.id === activeId);
             const hs = sc?.hotspots?.find((h: any) => h.id === openId);
             const makeCard = () => {
               const el = document.createElement('div');
@@ -819,18 +829,39 @@ const SphereViewer: React.FC = () => {
     }
   }, [selectedScene?.type, selectedScene?.targetProjectId]);
 
-  const toggleMoveMode = () => {
-    if (isMovingHotspot) {
-      setIsMovingHotspot(false);
-      useProjectStore.getState().selectHotspot(null);
-    } else {
-      setIsMovingHotspot(true);
-    }
-  };
-
   // Build the panorama config: a 360° video when available, otherwise the image.
   const getPanorama = (scene: typeof selectedScene) => {
     if (scene?.video) return { source: scene.video };
+    if (scene?.panoramaType === 'horizontal' && scene.image) {
+      return {
+        path: scene.image,
+        data: (img: HTMLImageElement) => {
+          const fullWidth = img.width;
+          const fullHeight = Math.round(img.width / 2);
+          const croppedWidth = img.width;
+          const croppedHeight = img.height;
+          const croppedY = Math.round((fullHeight - croppedHeight) / 2);
+
+          if (viewerRef.current) {
+            try {
+              const v = viewerRef.current as any;
+              v.setOption('pitchRange', [-0.0001, 0.0001]);
+              const currentPos = v.getPosition();
+              v.rotate({ yaw: currentPos?.yaw ?? 0, pitch: 0 });
+            } catch { /* ignore */ }
+          }
+
+          return {
+            fullWidth,
+            fullHeight,
+            croppedWidth,
+            croppedHeight,
+            croppedX: 0,
+            croppedY,
+          };
+        },
+      };
+    }
     return scene?.image;
   };
 
@@ -853,7 +884,9 @@ const SphereViewer: React.FC = () => {
         plugins.push([StereoPlugin, {}]);
       }
 
-      viewerRef.current = new Viewer({
+      const isHorizontal = selectedScene?.panoramaType === 'horizontal';
+
+      const viewerInstance = new Viewer({
         container: containerRef.current,
         panorama: getPanorama(selectedScene),
         plugins,
@@ -868,7 +901,31 @@ const SphereViewer: React.FC = () => {
         ...(isCurrentVideo
           ? { adapter: [EquirectangularVideoAdapter, { muted: false, autoplay: true }] }
           : {}),
+        ...(isHorizontal
+          ? {
+              pitchRange: [-0.0001, 0.0001],
+              defaultPitch: 0,
+            }
+          : {}),
       });
+
+      viewerInstance.addEventListener('position-updated', ({ position }: any) => {
+        if (selectedSceneRef.current?.panoramaType === 'horizontal' && position && Math.abs(position.pitch) > 0.0001) {
+          try {
+            viewerInstance.rotate({ yaw: position.yaw, pitch: 0 });
+          } catch { /* ignore */ }
+        }
+      });
+
+      viewerRef.current = viewerInstance;
+
+      if (isHorizontal) {
+        try {
+          (viewerInstance as any).setOption('pitchRange', [-0.0001, 0.0001]);
+          const currentPos = viewerInstance.getPosition();
+          viewerInstance.rotate({ yaw: currentPos?.yaw ?? 0, pitch: 0 });
+        } catch { /* ignore */ }
+      }
 
       if (isCurrentVideo && selectedScene?.video) {
         const vurl = selectedScene.video;
@@ -931,6 +988,21 @@ const SphereViewer: React.FC = () => {
     viewerRef.current.addEventListener('panorama-loaded', () => {
       showNavbar();
       setSceneLoading(false);
+
+      const isHoriz = selectedSceneRef.current?.panoramaType === 'horizontal';
+      if (isHoriz && viewerRef.current) {
+        try {
+          const v = viewerRef.current as any;
+          v.setOption('pitchRange', [-0.0001, 0.0001]);
+          const currentPos = v.getPosition();
+          v.rotate({ yaw: currentPos?.yaw ?? 0, pitch: 0 });
+        } catch { /* ignore */ }
+      } else if (viewerRef.current) {
+        try {
+          const v = viewerRef.current as any;
+          v.setOption('pitchRange', [-Math.PI / 2, Math.PI / 2]);
+        } catch { /* ignore */ }
+      }
     });
 
     // Keep `vrActive` in sync with the real stereo state. The VR button forces
@@ -1010,11 +1082,12 @@ const SphereViewer: React.FC = () => {
       const state = useProjectStore.getState();
       const moving = state.isMovingHotspot;
       const deleting = state.isDeletingHotspot;
+      const targetSceneId = state.activeSceneId ?? state.selectedSceneId;
       if (moving || deleting) {
         const hotspotId = e.marker?.data?.hotspotId;
         if (hotspotId) {
           if (deleting) {
-            if (state.selectedSceneId) state.removeHotspot(state.selectedSceneId, hotspotId);
+            if (targetSceneId) state.removeHotspot(targetSceneId, hotspotId);
           } else {
             state.selectHotspot(hotspotId);
           }
@@ -1024,7 +1097,7 @@ const SphereViewer: React.FC = () => {
       }
 
       // Click on empty sphere while in "Add Hotspot" mode -> create a hotspot
-      if (state.isAddingHotspot && state.selectedSceneId && !e.marker) {
+      if (state.isAddingHotspot && targetSceneId && !e.marker) {
         const newHotspot: Hotspot = {
           id: 'hotspot-' + Date.now(),
           type: 'text',
@@ -1032,7 +1105,7 @@ const SphereViewer: React.FC = () => {
           pitch: e.data.pitch,
           content: 'Nouveau Hotspot'
         };
-        state.addHotspot(state.selectedSceneId, newHotspot);
+        state.addHotspot(targetSceneId, newHotspot);
         state.setIsAddingHotspot(false);
         state.selectHotspot(newHotspot.id);
         setOpenHotspotId(newHotspot.id);
@@ -1055,6 +1128,7 @@ const SphereViewer: React.FC = () => {
     // Start audio for the initial viewpoint once the viewer is ready.
     playSceneAudio();
     currentIsVideoRef.current = Boolean(selectedScene?.video);
+    currentPanoramaTypeRef.current = selectedScene?.panoramaType ?? 'spherical';
   };
 
   // Initialize the viewer when the first panorama is loaded, or update it when the panorama changes.
@@ -1063,10 +1137,13 @@ const SphereViewer: React.FC = () => {
     if (!selectedScene?.image && !selectedScene?.video) return; // Wait until the project has a valid scene
 
     const isVideo = Boolean(selectedScene?.video);
+    const currentPanoType = selectedScene?.panoramaType ?? 'spherical';
     console.log('[SphereViewer] scene effect', {
       sceneId: selectedScene?.id,
       isVideo,
       currentIsVideo: currentIsVideoRef.current,
+      currentPanoType,
+      currentPanoramaType: currentPanoramaTypeRef.current,
       hasViewer: Boolean(viewerRef.current),
       video: selectedScene?.video,
       image: selectedScene?.image,
@@ -1074,15 +1151,21 @@ const SphereViewer: React.FC = () => {
 
     if (!viewerRef.current) {
       createViewer();
+      currentIsVideoRef.current = isVideo;
+      currentPanoramaTypeRef.current = currentPanoType;
       setViewerEpoch((e) => e + 1);
       return;
     }
 
     // The PSV adapter and the VR plugins are fixed at viewer creation. Switching
-    // between an image and a video scene, or toggling VR mode, requires
+    // between an image and a video scene, or changing panorama type / VR mode, requires
     // re-creating the viewer.
-    if (currentIsVideoRef.current !== isVideo || vrEnabledRef.current !== vrEnabled) {
-      console.log('[SphereViewer] recreating viewer (type or VR changed)');
+    if (
+      currentIsVideoRef.current !== isVideo ||
+      currentPanoramaTypeRef.current !== currentPanoType ||
+      vrEnabledRef.current !== vrEnabled
+    ) {
+      console.log('[SphereViewer] recreating viewer (type, panoType or VR changed)');
       setSceneLoading(true);
       try {
         viewerRef.current.destroy();
@@ -1099,6 +1182,7 @@ const SphereViewer: React.FC = () => {
       }
       createViewer();
       currentIsVideoRef.current = isVideo;
+      currentPanoramaTypeRef.current = currentPanoType;
       setViewerEpoch((e) => e + 1);
       vrEnabledRef.current = vrEnabled;
       // Keep the VR interface active across the rebuild: the VR DOM layer is torn
@@ -1127,10 +1211,12 @@ const SphereViewer: React.FC = () => {
     // Pause any playing audio during the transition.
     audioRef.current?.pause();
 
-    // 1. Freeze the current view and zoom-in slightly, as if we were moving
-    // forward into the next viewpoint.
-    const baseZoom = viewer.getZoomLevel();
-    viewer.zoom(Math.min(100, baseZoom + 35));
+    // 1. Freeze the current view and zoom-in slightly for spherical scenes
+    const isHorizontalScene = selectedScene?.panoramaType === 'horizontal';
+    if (!isHorizontalScene) {
+      const baseZoom = viewer.getZoomLevel();
+      viewer.zoom(Math.min(100, baseZoom + 35));
+    }
 
     // 2. Load the next panorama in the background, fully preloaded and hidden
     // (no fade, no loader). The view stays frozen on the current frame.
@@ -1138,6 +1224,23 @@ const SphereViewer: React.FC = () => {
       transitionInProgress.current = false;
       setIsTransitioning(false);
       setSceneLoading(false);
+      currentIsVideoRef.current = isVideo;
+      currentPanoramaTypeRef.current = currentPanoType;
+
+      if (isHorizontalScene) {
+        try {
+          const v = viewerRef.current as any;
+          v.setOption('pitchRange', [-0.0001, 0.0001]);
+          const currentPos = v.getPosition();
+          v.rotate({ yaw: currentPos?.yaw ?? 0, pitch: 0 });
+        } catch { /* ignore */ }
+      } else {
+        try {
+          const v = viewerRef.current as any;
+          v.setOption('pitchRange', [-Math.PI / 2, Math.PI / 2]);
+        } catch { /* ignore */ }
+      }
+
       // 3. The new panorama is ready: reveal it directly, keeping the
       // zoomed-in level so the next view stays advanced (no zoom-out),
       // then (re)start the appropriate audio track for this viewpoint.
@@ -1173,7 +1276,7 @@ const SphereViewer: React.FC = () => {
           reveal();
         });
     }, 320);
-  }, [selectedScene?.image, selectedScene?.video, vrEnabled]);
+  }, [selectedScene?.image, selectedScene?.video, selectedScene?.panoramaType, vrEnabled]);
 
   // Clean up the navbar-visibility and VR-polling intervals when the scene
   // effect re-runs.
@@ -1227,6 +1330,8 @@ const SphereViewer: React.FC = () => {
 
     (window as any).selectPSVScene = (targetId: string) => {
       const state = useProjectStore.getState();
+      if (state.isMovingLink) return; // Prevent navigation when in link moving mode
+
       const targetScene = state.scenes.find(s => s.id === targetId);
 
       // If the target is a project-link in viewer mode, navigate directly to the other project
@@ -1237,7 +1342,7 @@ const SphereViewer: React.FC = () => {
         return;
       }
 
-      state.selectScene(targetId);
+      state.setActiveScene(targetId);
     };
 
     (window as any).openPSVHotspot = (hotspotId: string) => {
@@ -1264,17 +1369,29 @@ const SphereViewer: React.FC = () => {
         if (!targetScene) return;
         const showTitle = targetScene.showTitleInViewer !== false;
 
+        // If link has a custom position set via drag & drop, use it directly.
+        // Otherwise, use map calculated yaw, and target scene's markerPitch (converted to radians).
+        let pitch: number;
+        if (link.isCustom) {
+          pitch = link.pitch;
+        } else {
+          const pitchNorm = targetScene.markerPitch;
+          pitch = pitchNorm !== undefined ? pitchNorm * (Math.PI / 2) : (link.pitch ?? -0.3);
+        }
+
+        const isCustomLink = Boolean(link.isCustom);
+
         markersPlugin.addMarker({
           id: `link-${link.target}`,
-          position: { yaw: link.yaw, pitch: link.pitch },
+          position: { yaw: link.yaw, pitch },
           html: `
-            <div style="text-align:center;cursor:pointer;user-select:none;" onclick="window.selectPSVScene('${link.target}')">
+            <div class="psv-link-marker" data-link-target="${link.target}" style="text-align:center;cursor:${isMovingLink ? 'grab' : 'pointer'};user-select:none;" onclick="window.selectPSVScene('${link.target}')">
               ${showTitle ? `
-                <div style="background:rgba(20,20,20,0.85);color:white;padding:4px 10px;border-radius:12px;font-size:11px;font-family:sans-serif;margin-bottom:6px;white-space:nowrap;border:1px solid rgba(255,255,255,0.15);box-shadow:0 2px 6px rgba(0,0,0,0.4);display:inline-block;">
-                  ${targetScene.title}
+                <div style="background:rgba(20,20,20,0.85);color:white;padding:4px 10px;border-radius:12px;font-size:11px;font-family:sans-serif;margin-bottom:6px;white-space:nowrap;border:1px solid ${isCustomLink ? '#4fc3f7' : 'rgba(255,255,255,0.15)'};box-shadow:0 2px 6px rgba(0,0,0,0.4);display:inline-block;">
+                  ${targetScene.title}${isCustomLink ? ' 📌' : ''}
                 </div>
               ` : ''}
-              <div style="width:34px;height:34px;background:rgba(255,255,255,0.95);border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 8px rgba(0,0,0,0.5);margin:0 auto;transition:transform 0.2s;">
+              <div style="width:34px;height:34px;background:rgba(255,255,255,0.95);border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 8px rgba(0,0,0,0.5);margin:0 auto;transition:transform 0.2s;border:${isMovingLink ? '2px solid #28a745' : 'none'};">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="${accentColor}" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
                   <polyline points="18 15 12 9 6 15"></polyline>
                 </svg>
@@ -1474,7 +1591,7 @@ const SphereViewer: React.FC = () => {
     if (vrActiveRef.current) {
       try { markersPlugin.hideAllMarkers(); } catch { /* ignore */ }
     }
-  }, [selectedScene?.links, selectedScene?.hotspots, scenes, openHotspotId]);
+  }, [selectedScene?.links, selectedScene?.hotspots, scenes, openHotspotId, viewerEpoch, isMovingLink]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -1482,12 +1599,14 @@ const SphereViewer: React.FC = () => {
     const cursor =
       isAddingHotspot || (isMovingHotspot && selectedHotspotId)
         ? addHotspotCursor
+        : isMovingLink
+        ? 'grab'
         : '';
     containerRef.current.style.cursor = cursor;
     containerRef.current.querySelectorAll<HTMLElement>('*').forEach((element) => {
       element.style.cursor = cursor;
     });
-  }, [addHotspotCursor, isAddingHotspot, isMovingHotspot, selectedHotspotId]);
+  }, [addHotspotCursor, isAddingHotspot, isMovingHotspot, isMovingLink, selectedHotspotId]);
 
   // Manage drag and drop using pointer events globally inside the viewer
   useEffect(() => {
@@ -1496,6 +1615,7 @@ const SphereViewer: React.FC = () => {
     if (!container) return;
 
     let dragHotspotId: string | null = null;
+    let dragLinkTargetId: string | null = null;
 
     const handlePointerDown = (e: PointerEvent) => {
       const target = e.target as HTMLElement;
@@ -1503,26 +1623,37 @@ const SphereViewer: React.FC = () => {
       // Ignore presses on the popup card so its buttons work and never start a drag
       if (markerEl && target.closest('.psv-hotspot-popup')) return;
       if (markerEl) {
-        const innerEl = markerEl.querySelector('.psv-hotspot-marker');
-        if (innerEl) {
-          const hotspotId = innerEl.getAttribute('data-hotspot-id');
+        const innerHotspotEl = markerEl.querySelector('.psv-hotspot-marker');
+        if (innerHotspotEl && isMovingHotspot) {
+          const hotspotId = innerHotspotEl.getAttribute('data-hotspot-id');
           if (hotspotId) {
-            if (isMovingHotspot) {
-              dragHotspotId = hotspotId;
-              useProjectStore.getState().selectHotspot(hotspotId);
-              container.style.cursor = 'grabbing';
-              e.preventDefault();
-              e.stopPropagation();
-            }
+            dragHotspotId = hotspotId;
+            useProjectStore.getState().selectHotspot(hotspotId);
+            container.style.cursor = 'grabbing';
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+          }
+        }
+        const innerLinkEl = markerEl.querySelector('.psv-link-marker');
+        if (innerLinkEl && isMovingLink) {
+          const linkTargetId = innerLinkEl.getAttribute('data-link-target');
+          if (linkTargetId) {
+            dragLinkTargetId = linkTargetId;
+            container.style.cursor = 'grabbing';
+            e.preventDefault();
+            e.stopPropagation();
+            return;
           }
         }
       }
     };
 
     const handlePointerMove = (e: PointerEvent) => {
-      if (!isMovingHotspot || !dragHotspotId) return;
+      if (!dragHotspotId && !dragLinkTargetId) return;
       const state = useProjectStore.getState();
-      if (!state.selectedSceneId) return;
+      const activeId = state.activeSceneId ?? state.selectedSceneId;
+      if (!activeId) return;
 
       const rect = container.getBoundingClientRect();
       const x = e.clientX - rect.left;
@@ -1530,19 +1661,24 @@ const SphereViewer: React.FC = () => {
 
       const spherical = viewerRef.current?.dataHelper.viewerCoordsToSphericalCoords({ x, y });
       if (spherical) {
-        state.updateHotspot(state.selectedSceneId, dragHotspotId, {
-          yaw: spherical.yaw,
-          pitch: spherical.pitch,
-        });
+        if (dragHotspotId && isMovingHotspot) {
+          state.updateHotspot(activeId, dragHotspotId, {
+            yaw: spherical.yaw,
+            pitch: spherical.pitch,
+          });
+        } else if (dragLinkTargetId && isMovingLink) {
+          state.updateLinkPosition(activeId, dragLinkTargetId, spherical.yaw, spherical.pitch);
+        }
       }
       e.preventDefault();
       e.stopPropagation();
     };
 
     const handlePointerUp = () => {
-      if (dragHotspotId) {
+      if (dragHotspotId || dragLinkTargetId) {
         dragHotspotId = null;
-        container.style.cursor = isMovingHotspot ? addHotspotCursor : '';
+        dragLinkTargetId = null;
+        container.style.cursor = isMovingHotspot ? addHotspotCursor : isMovingLink ? 'grab' : '';
       }
     };
 
@@ -1555,7 +1691,7 @@ const SphereViewer: React.FC = () => {
       window.removeEventListener('pointermove', handlePointerMove, true);
       window.removeEventListener('pointerup', handlePointerUp, true);
     };
-  }, [isMovingHotspot, addHotspotCursor]);
+  }, [isMovingHotspot, isMovingLink, addHotspotCursor]);
 
   useEffect(() => {
     (window as any).__isMovingHotspot = isMovingHotspot;
@@ -1859,13 +1995,14 @@ const SphereViewer: React.FC = () => {
         </div>
       )}
 
-      {/* Hotspot floating tools (editor only) — same pill style as the map controls */}
+      {/* Hotspot & Link floating tools (editor only) — same pill style as the map controls */}
       {selectedSceneId && selectedScene?.type !== 'project-link' && mode === 'editor' && (
         <div style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', zIndex: 1000, display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <button
             onClick={() => {
               setIsAddingHotspot(!isAddingHotspot);
               setIsMovingHotspot(false);
+              setIsMovingLink(false);
             }}
             title="Ajouter un hotspot"
             style={mapControlButtonStyle(isAddingHotspot, '#d32f2f', accentColor)}
@@ -1873,7 +2010,17 @@ const SphereViewer: React.FC = () => {
             <IconPlus /> Add Hotspot
           </button>
           <button
-            onClick={toggleMoveMode}
+            onClick={() => {
+              if (isMovingHotspot) {
+                setIsMovingHotspot(false);
+                useProjectStore.getState().selectHotspot(null);
+              } else {
+                setIsMovingHotspot(true);
+                setIsMovingLink(false);
+                setIsAddingHotspot(false);
+                setIsDeletingHotspot(false);
+              }
+            }}
             title="Déplacer un hotspot"
             style={mapControlButtonStyle(isMovingHotspot, '#28a745', 'rgba(0,0,0,0.55)')}
           >
@@ -1881,9 +2028,27 @@ const SphereViewer: React.FC = () => {
           </button>
           <button
             onClick={() => {
+              if (isMovingLink) {
+                setIsMovingLink(false);
+              } else {
+                setIsMovingLink(true);
+                setIsMovingHotspot(false);
+                setIsAddingHotspot(false);
+                setIsDeletingHotspot(false);
+                useProjectStore.getState().selectHotspot(null);
+              }
+            }}
+            title="Positionner les puces 360° par glisser-déplacer"
+            style={mapControlButtonStyle(isMovingLink, '#28a745', 'rgba(0,0,0,0.55)')}
+          >
+            <IconMove /> Move Puces
+          </button>
+          <button
+            onClick={() => {
               setIsDeletingHotspot(!isDeletingHotspot);
               setIsAddingHotspot(false);
               setIsMovingHotspot(false);
+              setIsMovingLink(false);
             }}
             title="Supprimer un hotspot"
             style={mapControlButtonStyle(isDeletingHotspot, '#d32f2f', 'rgba(189, 1, 1, 0.76)')}

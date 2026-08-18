@@ -7,6 +7,7 @@ interface ProjectState {
   project: Project | null;
   scenes: Scene[];
   selectedSceneId: string | null;
+  activeSceneId: string | null;
   selectedHotspotId: string | null;
   currentProjectId: string | null;
   mode: 'editor' | 'viewer';
@@ -19,6 +20,7 @@ interface ProjectState {
   setScenes: (scenes: Scene[]) => void;
   addScene: (scene: Scene) => void;
   selectScene: (id: string | null) => void;
+  setActiveScene: (id: string | null) => void;
   selectHotspot: (id: string | null) => void;
   setMode: (mode: 'editor' | 'viewer') => void;
   setMapConfig: (mapConfig: MapConfig) => void;
@@ -26,10 +28,14 @@ interface ProjectState {
   setCurrentProjectId: (id: string | null) => void;
   setSceneLoading: (val: boolean) => void;
   setIsMovingHotspot: (val: boolean) => void;
+  isMovingLink: boolean;
+  setIsMovingLink: (val: boolean) => void;
   updateScene: (id: string, updates: Partial<Scene>) => void;
   removeScene: (id: string) => void;
   addLink: (sourceId: string, targetId: string) => void;
   removeLink: (sourceId: string, targetId: string) => void;
+  updateLinkPosition: (sourceId: string, targetId: string, yaw: number, pitch: number) => void;
+  resetLinkPosition: (sourceId: string, targetId: string) => void;
   isAddingHotspot: boolean;
   setIsAddingHotspot: (val: boolean) => void;
   isDeletingHotspot: boolean;
@@ -48,14 +54,19 @@ export const useProjectStore = create<ProjectState>((set) => ({
   project: null,
   scenes: [],
   selectedSceneId: null,
+  activeSceneId: null,
   selectedHotspotId: null,
   currentProjectId: null,
   mode: 'editor',
   currentYaw: 0,
   isMovingHotspot: false,
+  isMovingLink: false,
   isSceneLoading: false,
 
-  setProject: (project) => set({ project, scenes: project.scenes }),
+  setProject: (project) => {
+    const initialId = project.project?.defaultScene || project.scenes[0]?.id || null;
+    set({ project, scenes: project.scenes, selectedSceneId: initialId, activeSceneId: initialId });
+  },
   setCurrentProjectId: (id) => set({ currentProjectId: id }),
   setSceneLoading: (val) => set({ isSceneLoading: val }),
   setScenes: (scenes) => set((state) => ({ 
@@ -64,8 +75,11 @@ export const useProjectStore = create<ProjectState>((set) => ({
   })),
   addScene: (scene) => set((state) => {
     const newScenes = [...state.scenes, scene];
+    const initialId = state.activeSceneId ?? scene.id;
     return {
       scenes: newScenes,
+      selectedSceneId: state.selectedSceneId ?? scene.id,
+      activeSceneId: initialId,
       project: state.project ? { ...state.project, scenes: newScenes } : {
         version: 1,
         project: { title: 'Nouveau Projet' },
@@ -74,6 +88,7 @@ export const useProjectStore = create<ProjectState>((set) => ({
     };
   }),
   selectScene: (id) => set({ selectedSceneId: id }),
+  setActiveScene: (id) => set({ activeSceneId: id, selectedSceneId: id }),
   selectHotspot: (id) => set({ selectedHotspotId: id }),
   removeScene: (id) => set((state) => {
     // Remove the scene and all links pointing to it from other scenes
@@ -83,14 +98,17 @@ export const useProjectStore = create<ProjectState>((set) => ({
         ...s,
         links: s.links.filter(l => l.target !== id),
       }));
+    const nextActive = state.activeSceneId === id ? (newScenes[0]?.id ?? null) : state.activeSceneId;
     return {
       scenes: newScenes,
-      selectedSceneId: state.selectedSceneId === id ? null : state.selectedSceneId,
+      selectedSceneId: state.selectedSceneId === id ? nextActive : state.selectedSceneId,
+      activeSceneId: nextActive,
       project: state.project ? { ...state.project, scenes: newScenes } : null,
     };
   }),
   setMode: (mode) => set({ mode }),
   setIsMovingHotspot: (val) => set({ isMovingHotspot: val }),
+  setIsMovingLink: (val) => set({ isMovingLink: val }),
   setMapConfig: (mapConfig) => set((state) => {
     if (!state.project) {
       return { 
@@ -118,9 +136,10 @@ export const useProjectStore = create<ProjectState>((set) => ({
     const nextPos = updates.position !== undefined ? updates.position : currentScene.position;
 
     const newScenes = state.scenes.map(s => {
-      // 1. If this is the scene being updated, recalculate its links' yaws
+      // 1. If this is the scene being updated, recalculate its links' yaws (unless custom)
       if (s.id === id) {
         const updatedLinks = s.links.map(link => {
+          if (link.isCustom) return link;
           const target = state.scenes.find(t => t.id === link.target);
           if (!target) return link;
           
@@ -136,11 +155,11 @@ export const useProjectStore = create<ProjectState>((set) => ({
         return { ...s, ...updates, links: updatedLinks };
       }
 
-      // 2. For other scenes, if the updated scene moved, recalculate incoming links pointing to it
+      // 2. For other scenes, if the updated scene moved, recalculate incoming links pointing to it (unless custom)
       const linksToUpdated = s.links.some(l => l.target === id);
       if (linksToUpdated && updates.position !== undefined) {
         const updatedLinks = s.links.map(link => {
-          if (link.target !== id) return link;
+          if (link.target !== id || link.isCustom) return link;
 
           const dx = nextPos.x - s.position.x;
           const dy = nextPos.y - s.position.y;
@@ -224,6 +243,58 @@ export const useProjectStore = create<ProjectState>((set) => ({
     return {
       scenes: newScenes,
       project: state.project ? { ...state.project, scenes: newScenes } : null
+    };
+  }),
+  updateLinkPosition: (sourceId, targetId, yaw, pitch) => set((state) => {
+    const newScenes = state.scenes.map(s => {
+      if (s.id !== sourceId) return s;
+      const updatedLinks = s.links.map(link => {
+        if (link.target !== targetId) return link;
+        return {
+          ...link,
+          yaw,
+          pitch,
+          isCustom: true,
+          customYaw: yaw,
+          customPitch: pitch,
+        };
+      });
+      return { ...s, links: updatedLinks };
+    });
+    return {
+      scenes: newScenes,
+      project: state.project ? { ...state.project, scenes: newScenes } : null,
+    };
+  }),
+  resetLinkPosition: (sourceId, targetId) => set((state) => {
+    const source = state.scenes.find(s => s.id === sourceId);
+    const target = state.scenes.find(s => s.id === targetId);
+    if (!source || !target) return {};
+
+    const dx = target.position.x - source.position.x;
+    const dy = target.position.y - source.position.y;
+    let mapAngle = Math.atan2(dx, dy) * 180 / Math.PI;
+    mapAngle = (mapAngle + 360) % 360;
+    const calcYaw = ((mapAngle - source.north + 360) % 360) * Math.PI / 180;
+    const calcPitch = -0.3;
+
+    const newScenes = state.scenes.map(s => {
+      if (s.id !== sourceId) return s;
+      const updatedLinks = s.links.map(link => {
+        if (link.target !== targetId) return link;
+        const { isCustom, customYaw, customPitch, ...rest } = link;
+        return {
+          ...rest,
+          yaw: calcYaw,
+          pitch: calcPitch,
+        };
+      });
+      return { ...s, links: updatedLinks };
+    });
+
+    return {
+      scenes: newScenes,
+      project: state.project ? { ...state.project, scenes: newScenes } : null,
     };
   }),
   isAddingHotspot: false,

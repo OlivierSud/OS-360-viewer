@@ -123,6 +123,8 @@ Contient les informations de la carte 2D.
 - thumbnail	string	URL miniature
 - position	object	Position sur la carte
 - north	number	Orientation nord
+- panoramaType	string	Type de panorama ('spherical' par défaut, ou 'horizontal')
+- markerPitch	number	Hauteur/élévation des puces 360 (-1 à 1, 0 = horizontale, -0.3 par défaut)
 - links	array	Liens vers autres scènes
 - hotspots	array	Points interactifs
 ## 7.3 Position

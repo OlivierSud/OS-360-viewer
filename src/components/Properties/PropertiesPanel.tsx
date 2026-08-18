@@ -504,6 +504,26 @@ const ProjectSettingsPanel: React.FC<{ mobileOpen?: boolean; onMobileClose?: () 
           style={{ display: 'none' }}
           onChange={handleMapFileChange}
         />
+
+        {/* Fixed minimap option */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '6px' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '9px', cursor: 'pointer', fontSize: '0.85rem', color: '#e0e0e0' }}>
+            <input
+              type="checkbox"
+              checked={Boolean(mapConfig?.fixedMinimap)}
+              onChange={(e) => {
+                if (mapConfig) {
+                  setMapConfig({ ...mapConfig, fixedMinimap: e.target.checked });
+                }
+              }}
+              style={{ width: '16px', height: '16px', accentColor: '#007acc', cursor: 'pointer' }}
+            />
+            Carte fixe dans la minimap (Minimap fixe)
+          </label>
+          <div style={{ fontSize: '0.74rem', color: '#666', lineHeight: 1.4, paddingLeft: '25px' }}>
+            Ajuste toute la carte au centre de la minimap sans débordement, et bloque le zoom et le déplacement.
+          </div>
+        </div>
       </div>
 
       {/* ── Viewer link ── */}
@@ -1033,6 +1053,82 @@ const HotspotPropertiesPanel: React.FC<{ mobileOpen?: boolean; onMobileClose?: (
               <h4 style={{ margin: '0 0 5px 0', color: '#888', fontSize: '0.8rem', textTransform: 'uppercase' }}>Viewpoint</h4>
               <div style={{ fontWeight: 'bold', fontSize: '1rem' }}>{selectedScene.title}</div>
               <div style={{ fontSize: '0.8rem', color: '#555', marginTop: '2px' }}>ID: {selectedScene.id}</div>
+            </div>
+
+            <Field label="Type de panorama">
+              <select
+                value={selectedScene.panoramaType ?? 'spherical'}
+                onChange={(e) => updateScene(selectedScene.id, { panoramaType: e.target.value as 'spherical' | 'horizontal' })}
+                style={inputStyle}
+              >
+                <option value="spherical">🌐 Sphérique (360° × 180°)</option>
+                <option value="horizontal">↔️ Horizontal (360° cylindrique)</option>
+              </select>
+            </Field>
+
+
+            {/* Links section */}
+            <div style={{ borderTop: '1px solid #333', paddingTop: '15px' }}>
+              <h4 style={{ margin: '0 0 10px 0', color: '#888', fontSize: '0.8rem', textTransform: 'uppercase' }}>Puces de transition ({selectedScene.links?.length ?? 0})</h4>
+              {selectedScene.links && selectedScene.links.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {selectedScene.links.map((link) => {
+                    const target = scenes.find((s) => s.id === link.target);
+                    const targetTitle = target?.title ?? link.target;
+                    return (
+                      <div
+                        key={link.target}
+                        style={{
+                          padding: '6px 10px',
+                          backgroundColor: '#252526',
+                          border: '1px solid #333',
+                          borderRadius: '4px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          fontSize: '0.82rem',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
+                          <span>➡️</span>
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{targetTitle}</span>
+                          {link.isCustom ? (
+                            <span style={{ fontSize: '0.68rem', background: '#1b4d6e', color: '#4fc3f7', padding: '1px 5px', borderRadius: '8px', flexShrink: 0 }}>
+                              📌 Custom
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: '0.68rem', color: '#666', flexShrink: 0 }}>
+                              Carte
+                            </span>
+                          )}
+                        </div>
+                        {link.isCustom && (
+                          <button
+                            onClick={() => useProjectStore.getState().resetLinkPosition(selectedScene.id, link.target)}
+                            style={{
+                              background: '#2d2d2d',
+                              border: '1px solid #444',
+                              color: '#aaa',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              fontSize: '0.72rem',
+                              padding: '2px 6px',
+                              flexShrink: 0,
+                            }}
+                            title="Réinitialiser sur l'alignement de la carte"
+                          >
+                            Reset
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div style={{ fontSize: '0.82rem', color: '#555', fontStyle: 'italic' }}>
+                  Aucune puce reliée. Liez des points de vue sur la carte 2D.
+                </div>
+              )}
             </div>
 
             <div style={{ borderTop: '1px solid #333', paddingTop: '15px' }}>

@@ -7,25 +7,85 @@ import type { Scene } from '../../models/Scene';
 import { createTrackedObjectUrl } from '../../services/mediaRegistry';
 import PanoCapture from './PanoCapture';
 import PanoDesktopNotice from './PanoDesktopNotice';
+import { DEFAULT_VIEWPOINT_COLOR, DEFAULT_ACTIVE_VIEWPOINT_COLOR } from '../../utils/theme';
 
-// In viewer mode the map is shown inside a circular minimap. To make the plan
-// fill that circle (instead of leaving empty margins in the corners), we fit
-// with a negative padding proportional to the container size. This zooms in so
-// the image covers the whole circle.
-const circlePadding = (map: L.Map): L.Point => {
-  const size = map.getSize();
-  const pad = Math.round(Math.min(size.x, size.y) * 0.15);
-  return L.point(-pad, -pad);
-};
+
 
 const FitBounds: React.FC<{ bounds: L.LatLngBoundsExpression; firstFitRef: React.MutableRefObject<boolean>; mode?: 'editor' | 'viewer'; fixedMinimap?: boolean }> = ({ bounds, firstFitRef, mode, fixedMinimap }) => {
   const map = useMap();
+  const minimapView = useProjectStore((state) => state.project?.map?.minimapView);
+  // Tracks the fixed (locked) view's visible bounds so they can be re-fitted
+  // on any container resize (responsive), keeping the same extent on screen.
+  const lockRef = useRef<{ savedZoom: number; savedCenter: string; bounds: L.LatLngBounds } | null>(null);
   useEffect(() => {
     // Wait until the map is laid out (so its size is known) before computing
     // zoom levels — otherwise getBoundsZoom / circlePadding read a 0px size.
     const apply = () => {
+      const size = map.getSize();
+      if (size.x === 0 || size.y === 0) return;
+      const paddingPoint = L.point(0, 0);
+
+      // A recorded minimap view (zoom + center) takes precedence in the viewer:
+      // it is the locked view when the map is fixed, or the initial view when free.
+      if (mode === 'viewer' && minimapView) {
+        const savedCenter = L.latLng(minimapView.center[0], minimapView.center[1]);
+        const centerKey = `${minimapView.center[0]},${minimapView.center[1]}`;
+        if (fixedMinimap) {
+          // Responsive locked view: capture the saved view's visible bounds once,
+          // then on every container resize re-fit those exact bounds so the same
+          // extent stays visible at any screen size (no drift, works symmetrically
+          // when shrinking or growing).
+          if (
+            !lockRef.current ||
+            lockRef.current.savedZoom !== minimapView.zoom ||
+            lockRef.current.savedCenter !== centerKey
+          ) {
+            // Widen the zoom range before applying the saved view so the
+            // captured extent reflects the true saved zoom (negative for image
+            // maps) instead of being clamped to the default min zoom.
+            map.setMinZoom(-Infinity);
+            map.setMaxZoom(Infinity);
+            map.setView(savedCenter, minimapView.zoom, { animate: false });
+            lockRef.current = {
+              savedZoom: minimapView.zoom,
+              savedCenter: centerKey,
+              bounds: map.getBounds(),
+            };
+          }
+          const b = lockRef.current.bounds as L.LatLngBounds;
+          map.setMinZoom(-Infinity);
+          map.setMaxZoom(Infinity);
+          const zoom = map.getBoundsZoom(b, false, L.point(0, 0));
+          map.setMinZoom(zoom);
+          map.setMaxZoom(zoom);
+          try {
+            map.dragging.disable();
+            map.touchZoom.disable();
+            map.doubleClickZoom.disable();
+            map.scrollWheelZoom.disable();
+            map.boxZoom.disable();
+            map.keyboard.disable();
+          } catch { /* ignore */ }
+          map.setView(b.getCenter(), zoom, { animate: false });
+        } else {
+          map.setMinZoom(minimapView.zoom - 2);
+          map.setMaxZoom(minimapView.zoom + 2);
+          if (firstFitRef.current) {
+            firstFitRef.current = false;
+            map.setView(savedCenter, minimapView.zoom, { animate: false });
+          }
+        }
+        return;
+      }
+
       if (fixedMinimap && mode === 'viewer') {
-        const fitZoom = map.getBoundsZoom(bounds, false, L.point(0, 0));
+        // getBoundsZoom clamps its result to the map's current min/max zoom
+        // options. For image (CRS.Simple) maps the true fit is a *negative*
+        // zoom, so widen the range first or the fit gets clamped to 0 (and the
+        // plan ends up cropped instead of fully visible).
+        map.setMinZoom(-Infinity);
+        map.setMaxZoom(Infinity);
+        const fitZoom = map.getBoundsZoom(bounds, false, paddingPoint);
         map.setMinZoom(fitZoom);
         map.setMaxZoom(fitZoom);
         try {
@@ -40,24 +100,28 @@ const FitBounds: React.FC<{ bounds: L.LatLngBoundsExpression; firstFitRef: React
         map.setView(center, fitZoom, { animate: false });
         return;
       }
-
-      // fitZoom = zoom at which the plan exactly fills the square container.
-      const fitZoom = map.getBoundsZoom(bounds, false, L.point(30, 30));
-      // In the viewer we start well zoomed-out so the WHOLE plan (square) is
-      // comfortably visible inside the circular minimap, with margin around it.
-      // Each zoom level halves the scale, so −2 levels shows the plan clearly.
-      const startZoom = mode === 'viewer' ? fitZoom - 4 : fitZoom;
+      // getBoundsZoom clamps its result to the map's current min/max zoom
+      // options. For image (CRS.Simple) maps the true fit is a *negative*
+      // zoom, so widen the range first or the fit gets clamped to 0 (and the
+      // plan ends up cropped instead of fully visible).
+      map.setMinZoom(-Infinity);
+      map.setMaxZoom(Infinity);
+      // fitZoom = zoom at which the plan exactly fills the container.
+      const fitZoom = map.getBoundsZoom(bounds, false, paddingPoint);
+      // In the viewer the minimap container now matches the image ratio,
+      // so we fit the plan exactly. In the editor we keep the standard fit.
+      const startZoom = mode === 'viewer' ? fitZoom : map.getBoundsZoom(bounds, false, L.point(30, 30));
       // Allow zooming out a couple more levels past the start view.
       const minZoomLevel = startZoom - 2;
       map.setMinZoom(minZoomLevel);
-      map.setMaxZoom(Math.max(2, fitZoom + 2));
+      map.setMaxZoom(Math.max(2, (mode === 'viewer' ? fitZoom : startZoom) + 2));
 
       const center = L.latLngBounds(bounds as any).getCenter();
 
       if (firstFitRef.current || mode === 'editor') {
         firstFitRef.current = false;
         map.setView(center, startZoom, { animate: false });
-      }
+      }   
     };
     map.whenReady(apply);
     // On mobile the container size changes after mount (dynamic address bar,
@@ -72,17 +136,77 @@ const FitBounds: React.FC<{ bounds: L.LatLngBoundsExpression; firstFitRef: React
     // on the starting viewpoint by RecenterOnProjectChange when the project
     // changes (e.g. via a Portal). We only keep the zoom bounds up to date.
     return () => { clearTimeout(t); ro.disconnect(); };
-  }, [map, bounds, firstFitRef, mode, fixedMinimap]);
+  }, [map, bounds, firstFitRef, mode, fixedMinimap, minimapView]);
   return null;
 };
 
 const FitGeoBounds: React.FC<{ scenes: Scene[]; firstFitRef: React.MutableRefObject<boolean>; mode?: 'editor' | 'viewer'; fixedMinimap?: boolean }> = ({ scenes, firstFitRef, mode, fixedMinimap }) => {
   const map = useMap();
+  const minimapView = useProjectStore((state) => state.project?.map?.minimapView);
+  // Tracks the fixed (locked) view's visible bounds so they can be re-fitted
+  // on any container resize (responsive), keeping the same extent on screen.
+  const lockRef = useRef<{ savedZoom: number; savedCenter: string; bounds: L.LatLngBounds } | null>(null);
   useEffect(() => {
     const applyFit = () => {
+      const size = map.getSize();
+      if (size.x === 0 || size.y === 0) return;
+
       if (scenes.length === 0) {
         map.setMinZoom(1);
         map.setMaxZoom(18);
+        return;
+      }
+
+      // A recorded minimap view (zoom + center) takes precedence in the viewer:
+      // it is the locked view when the map is fixed, or the initial view when free.
+      if (mode === 'viewer' && minimapView) {
+        const savedCenter = L.latLng(minimapView.center[0], minimapView.center[1]);
+        const centerKey = `${minimapView.center[0]},${minimapView.center[1]}`;
+        if (fixedMinimap) {
+          // Responsive locked view: capture the saved view's visible bounds once,
+          // then on every container resize re-fit those exact bounds so the same
+          // extent stays visible at any screen size (no drift, works symmetrically
+          // when shrinking or growing).
+          if (
+            !lockRef.current ||
+            lockRef.current.savedZoom !== minimapView.zoom ||
+            lockRef.current.savedCenter !== centerKey
+          ) {
+            // Widen the zoom range before applying the saved view so the
+            // captured extent reflects the true saved zoom (negative for image
+            // maps) instead of being clamped to the default min zoom.
+            map.setMinZoom(-Infinity);
+            map.setMaxZoom(Infinity);
+            map.setView(savedCenter, minimapView.zoom, { animate: false });
+            lockRef.current = {
+              savedZoom: minimapView.zoom,
+              savedCenter: centerKey,
+              bounds: map.getBounds(),
+            };
+          }
+          const b = lockRef.current.bounds as L.LatLngBounds;
+          map.setMinZoom(-Infinity);
+          map.setMaxZoom(Infinity);
+          const zoom = map.getBoundsZoom(b, false, L.point(0, 0));
+          map.setMinZoom(zoom);
+          map.setMaxZoom(zoom);
+          try {
+            map.dragging.disable();
+            map.touchZoom.disable();
+            map.doubleClickZoom.disable();
+            map.scrollWheelZoom.disable();
+            map.boxZoom.disable();
+            map.keyboard.disable();
+          } catch { /* ignore */ }
+          map.setView(b.getCenter(), zoom, { animate: false });
+        } else {
+          map.setMinZoom(minimapView.zoom - 2);
+          map.setMaxZoom(minimapView.zoom + 2);
+          if (firstFitRef.current) {
+            firstFitRef.current = false;
+            map.setView(savedCenter, minimapView.zoom, { animate: false });
+          }
+        }
         return;
       }
 
@@ -95,9 +219,16 @@ const FitGeoBounds: React.FC<{ scenes: Scene[]; firstFitRef: React.MutableRefObj
       const maxLon = Math.max(...lons);
 
       const bounds = L.latLngBounds([minLat, minLon], [maxLat, maxLon]);
+      const paddingPoint = L.point(0, 0);
 
       if (fixedMinimap && mode === 'viewer') {
-        const fitZoom = map.getBoundsZoom(bounds, false, L.point(20, 20));
+        // getBoundsZoom clamps its result to the map's current min/max zoom
+        // options. For image (CRS.Simple) maps the true fit is a *negative*
+        // zoom, so widen the range first or the fit gets clamped to 0 (and the
+        // plan ends up cropped instead of fully visible).
+        map.setMinZoom(-Infinity);
+        map.setMaxZoom(Infinity);
+        const fitZoom = map.getBoundsZoom(bounds, false, paddingPoint);
         map.setMinZoom(fitZoom);
         map.setMaxZoom(fitZoom);
         try {
@@ -111,7 +242,6 @@ const FitGeoBounds: React.FC<{ scenes: Scene[]; firstFitRef: React.MutableRefObj
         map.setView(bounds.getCenter(), fitZoom, { animate: false });
         return;
       }
-
       // If there is only one viewpoint, or all viewpoints are at the same spot
       if (minLat === maxLat && minLon === maxLon) {
         map.setMinZoom(8);
@@ -124,7 +254,7 @@ const FitGeoBounds: React.FC<{ scenes: Scene[]; firstFitRef: React.MutableRefObj
         return;
       }
 
-      const fitZoom = map.getBoundsZoom(bounds, false, mode === 'viewer' ? circlePadding(map) : L.point(50, 50));
+      const fitZoom = map.getBoundsZoom(bounds, false, mode === 'viewer' ? paddingPoint : L.point(50, 50));
       // Allow zooming out 5 levels further than the viewpoints bounds for geographic map
       const minZoomLevel = Math.max(1, fitZoom - 5);
       // Don't zoom in closer than fitZoom + 2, cap at 17 to prevent zooming into empty space
@@ -153,12 +283,43 @@ const FitGeoBounds: React.FC<{ scenes: Scene[]; firstFitRef: React.MutableRefObj
     if (parent) ro.observe(parent);
     const t = setTimeout(refit, 300);
     return () => { clearTimeout(t); ro.disconnect(); };
-  }, [map, scenes, firstFitRef, mode, fixedMinimap]);
+  }, [map, scenes, firstFitRef, mode, fixedMinimap, minimapView]);
   return null;
 };
 
 const MapRefBridge: React.FC<{ mapRef: React.MutableRefObject<L.Map | null> }> = ({ mapRef }) => {
   mapRef.current = useMap();
+  return null;
+};
+
+// Reports the current view (zoom + center) to the parent whenever it changes.
+// Used by the preview popup to record the chosen minimap view.
+const MapViewReporter: React.FC<{ onViewChange?: (view: { zoom: number; center: [number, number] }) => void }> = ({ onViewChange }) => {
+  const map = useMap();
+  const cbRef = useRef(onViewChange);
+  cbRef.current = onViewChange;
+  useEffect(() => {
+    const cb = cbRef.current;
+    if (!cb) return;
+    const report = () => {
+      try {
+        const c = map.getCenter();
+        cb({ zoom: map.getZoom(), center: [c.lat, c.lng] });
+      } catch {
+        // Map not initialized yet (no center/zoom). Ignore until ready.
+      }
+    };
+    report();
+    map.on('zoomend', report);
+    map.on('moveend', report);
+    // whenReady fires now if already loaded, or later once the map is ready —
+    // this catches the case where 'load' already fired before this effect ran.
+    map.whenReady(report);
+    return () => {
+      map.off('zoomend', report);
+      map.off('moveend', report);
+    };
+  }, [map]);
   return null;
 };
 
@@ -413,9 +574,14 @@ interface ProjectMapProps {
   mapRef?: React.MutableRefObject<L.Map | null>;
   hideZoomControl?: boolean;
   mode?: 'editor' | 'viewer';
+  fixedMinimapOverride?: boolean;
+  /** Keep the map pannable/zoomable even when it would normally be locked. */
+  forceInteractive?: boolean;
+  /** Called with the current { zoom, center } whenever the view changes. */
+  onViewChange?: (view: { zoom: number; center: [number, number] }) => void;
 }
 
-const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, mode: modeProp }) => {
+const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, mode: modeProp, fixedMinimapOverride, forceInteractive, onViewChange }) => {
   const project = useProjectStore((state) => state.project);
   const scenes = useProjectStore((state) => state.scenes);
   const setMapConfig = useProjectStore((state) => state.setMapConfig);
@@ -427,8 +593,13 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, mode: 
   const addLink = useProjectStore((state) => state.addLink);
   const removeLink = useProjectStore((state) => state.removeLink);
   const removeScene = useProjectStore((state) => state.removeScene);
-  const mode = useProjectStore((state) => state.mode);
-  
+  // Use the explicit `mode` prop when provided (viewer/preview), otherwise fall
+  // back to the global store mode. This prevents the editor-only UI (Add 360,
+  // rotate, delete, …) from leaking into the preview popup, which is rendered
+  // inside the editor but must show the viewer interface only.
+  const storeMode = useProjectStore((state) => state.mode);
+  const mode = modeProp ?? storeMode;
+
   const [isPlacing, setIsPlacing] = useState(false);
   const [isPlacingProjectLink, setIsPlacingProjectLink] = useState(false);
   const [isMoving, setIsMoving] = useState(false);
@@ -620,6 +791,10 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, mode: 
 
   // Configuration for custom map image
   const mapConfig = project?.map;
+  const isFixedMinimap = fixedMinimapOverride !== undefined ? fixedMinimapOverride : Boolean(mapConfig?.fixedMinimap);
+  // When `forceInteractive` is set (preview), the map stays pannable/zoomable
+  // even if it would normally be locked, so the user can pick the saved view.
+  const effectiveFixed = isFixedMinimap && !forceInteractive;
   
   // Calculate bounds based on the image size if provided
   const bounds = useMemo(() => {
@@ -820,6 +995,8 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, mode: 
     const isProjectLink = scene.type === 'project-link';
     // Yaw is in radians. Convert to degrees.
     const angle = isSelected ? (currentYaw * 180 / Math.PI) + scene.north : 0;
+    const viewpointColor = mapConfig?.viewpointColor ?? DEFAULT_VIEWPOINT_COLOR;
+    const activeViewpointColor = mapConfig?.activeViewpointColor ?? DEFAULT_ACTIVE_VIEWPOINT_COLOR;
     
     let html = '';
     if (isSelected) {
@@ -834,7 +1011,7 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, mode: 
         html = `
           <div style="position: relative; width: 100px; height: 100px; display: flex; align-items: center; justify-content: center;">
             ${isRotateMode ? `
-              <div style="position: absolute; top: 10px; left: 10px; right: 10px; bottom: 10px; border: 2px dashed #007acc; border-radius: 50%; pointer-events: none; box-shadow: 0 0 6px rgba(0,122,204,0.4); animation: rotate-dash 20s linear infinite;"></div>
+              <div style="position: absolute; top: 10px; left: 10px; right: 10px; bottom: 10px; border: 2px dashed ${activeViewpointColor}; border-radius: 50%; pointer-events: none; box-shadow: 0 0 6px rgba(0,0,0,0.4); animation: rotate-dash 20s linear infinite;"></div>
               <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; transform: rotate(${angle}deg); pointer-events: none;">
                 <div style="position: absolute; top: 4px; left: 50%; transform: translateX(-50%); width: 12px; height: 12px; background: #ffc107; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 4px rgba(0,0,0,0.6); cursor: row-resize;"></div>
               </div>
@@ -846,14 +1023,14 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, mode: 
               <svg viewBox="0 0 100 100" style="width: 100%; height: 100%;">
                 <defs>
                   <radialGradient id="coneGradient" cx="50" cy="50" r="56" gradientUnits="userSpaceOnUse">
-                    <stop offset="0%" stop-color="#007acc" stop-opacity="0.8" />
-                    <stop offset="100%" stop-color="#007acc" stop-opacity="0" />
+                    <stop offset="0%" stop-color="${activeViewpointColor}" stop-opacity="0.8" />
+                    <stop offset="100%" stop-color="${activeViewpointColor}" stop-opacity="0" />
                   </radialGradient>
                 </defs>
                 <path d="M50 50 L10 10 A56.5 56.5 0 0 1 90 10 Z" fill="url(#coneGradient)" />
               </svg>
             </div>
-            <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 14px; height: 14px; background: #007acc; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 4px rgba(0,0,0,0.5);"></div>
+            <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 14px; height: 14px; background: ${activeViewpointColor}; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 4px rgba(0,0,0,0.5);"></div>
           </div>
         `;
       }
@@ -870,7 +1047,7 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, mode: 
             ${isLinkStart ? `
               <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; border: 2px dashed #28a745; border-radius: 50%; pointer-events: none; animation: rotate-dash 10s linear infinite;"></div>
             ` : ''}
-            <div style="width: 12px; height: 12px; background: #ff5722; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 4px rgba(0,0,0,0.5);"></div>
+            <div style="width: 12px; height: 12px; background: ${viewpointColor}; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 4px rgba(0,0,0,0.5);"></div>
           </div>
         `;
       }
@@ -900,18 +1077,22 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, mode: 
             key="custom-map"
             crs={L.CRS.Simple} 
             style={{ height: '100%', width: '100%' }}
-            zoomControl={!hideZoomControl && !(mapConfig?.fixedMinimap && modeProp === 'viewer')}
-            dragging={!(mapConfig?.fixedMinimap && modeProp === 'viewer')}
-            scrollWheelZoom={!(mapConfig?.fixedMinimap && modeProp === 'viewer')}
-            doubleClickZoom={!(mapConfig?.fixedMinimap && modeProp === 'viewer')}
-            touchZoom={!(mapConfig?.fixedMinimap && modeProp === 'viewer')}
+            zoom={mapConfig?.minimapView?.zoom ?? 1}
+            zoomSnap={0}
+            zoomDelta={0.25}
+            zoomControl={!hideZoomControl && !(effectiveFixed && modeProp === 'viewer')}
+            dragging={!(effectiveFixed && modeProp === 'viewer')}
+            scrollWheelZoom={!(effectiveFixed && modeProp === 'viewer')}
+            doubleClickZoom={!(effectiveFixed && modeProp === 'viewer')}
+            touchZoom={!(effectiveFixed && modeProp === 'viewer')}
           >
             {mapRef && <MapRefBridge mapRef={mapRef} />}
             <KeepMapSize />
             <MapEvents />
-            <FitBounds bounds={bounds} firstFitRef={firstFitRef} mode={modeProp} fixedMinimap={mapConfig?.fixedMinimap} />
-            <CenterOnSelected fixedMinimap={mapConfig?.fixedMinimap} />
-            <RecenterOnProjectChange fixedMinimap={mapConfig?.fixedMinimap} />
+            <MapViewReporter onViewChange={onViewChange} />
+            <FitBounds bounds={bounds} firstFitRef={firstFitRef} mode={modeProp} fixedMinimap={effectiveFixed} />
+            <CenterOnSelected fixedMinimap={effectiveFixed} />
+            <RecenterOnProjectChange fixedMinimap={effectiveFixed} />
             <ImageOverlay
               url={mapConfig.image!}
               bounds={bounds}
@@ -1126,19 +1307,21 @@ const ProjectMap: React.FC<ProjectMapProps> = ({ mapRef, hideZoomControl, mode: 
           <MapContainer
             key="geo-map"
             center={mapConfig.center ?? [48.8566, 2.3522]}
+            zoom={mapConfig?.minimapView?.zoom ?? 12}
             style={{ height: '100%', width: '100%' }}
-            zoomControl={!hideZoomControl && !(mapConfig?.fixedMinimap && modeProp === 'viewer')}
-            dragging={!(mapConfig?.fixedMinimap && modeProp === 'viewer')}
-            scrollWheelZoom={!(mapConfig?.fixedMinimap && modeProp === 'viewer')}
-            doubleClickZoom={!(mapConfig?.fixedMinimap && modeProp === 'viewer')}
-            touchZoom={!(mapConfig?.fixedMinimap && modeProp === 'viewer')}
+            zoomControl={!hideZoomControl && !(effectiveFixed && modeProp === 'viewer')}
+            dragging={!(effectiveFixed && modeProp === 'viewer')}
+            scrollWheelZoom={!(effectiveFixed && modeProp === 'viewer')}
+            doubleClickZoom={!(effectiveFixed && modeProp === 'viewer')}
+            touchZoom={!(effectiveFixed && modeProp === 'viewer')}
           >
             {mapRef && <MapRefBridge mapRef={mapRef} />}
             <KeepMapSize />
             <MapEvents />
-            <FitGeoBounds scenes={scenes} firstFitRef={firstFitRef} mode={modeProp} fixedMinimap={mapConfig?.fixedMinimap} />
-            <CenterOnSelected fixedMinimap={mapConfig?.fixedMinimap} />
-            <RecenterOnProjectChange fixedMinimap={mapConfig?.fixedMinimap} />
+            <MapViewReporter onViewChange={onViewChange} />
+            <FitGeoBounds scenes={scenes} firstFitRef={firstFitRef} mode={modeProp} fixedMinimap={effectiveFixed} />
+            <CenterOnSelected fixedMinimap={effectiveFixed} />
+            <RecenterOnProjectChange fixedMinimap={effectiveFixed} />
             {mode === 'editor' && <GeoSearch />}
             <TileLayer
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'

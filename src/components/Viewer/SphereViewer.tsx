@@ -1393,8 +1393,8 @@ const SphereViewer: React.FC = () => {
           html: `
             <div class="psv-link-marker" data-link-target="${link.target}" style="text-align:center;cursor:${isMovingLink ? 'grab' : 'pointer'};user-select:none;" onclick="window.selectPSVScene('${link.target}')">
               ${showTitle ? `
-                <div style="background:rgba(20,20,20,0.85);color:white;padding:4px 10px;border-radius:12px;font-size:11px;font-family:sans-serif;margin-bottom:6px;white-space:nowrap;border:1px solid ${isCustomLink ? '#4fc3f7' : 'rgba(255,255,255,0.15)'};box-shadow:0 2px 6px rgba(0,0,0,0.4);display:inline-block;">
-                  ${targetScene.title}${isCustomLink ? ' 📌' : ''}
+                <div style="background:rgba(20,20,20,0.85);color:white;padding:4px 10px;border-radius:12px;font-size:11px;font-family:sans-serif;margin-bottom:6px;white-space:nowrap;border:1px solid ${isCustomLink && mode === 'editor' ? '#4fc3f7' : 'rgba(255,255,255,0.15)'};box-shadow:0 2px 6px rgba(0,0,0,0.4);display:inline-block;">
+                  ${targetScene.title}
                 </div>
               ` : ''}
               <div style="width:34px;height:34px;background:rgba(255,255,255,0.95);border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 8px rgba(0,0,0,0.5);margin:0 auto;transition:transform 0.2s;border:${isMovingLink ? '2px solid #28a745' : 'none'};">

@@ -6,7 +6,9 @@ import { createTrackedObjectUrl } from '../../services/mediaRegistry';
 import { createProjectId, deleteProject } from '../../storage/projectRegistry';
 import type { Project } from '../../models/Project';
 import { sha256 } from '../../utils/crypto';
-import { DEFAULT_ACCENT_COLOR } from '../../utils/theme';
+import { DEFAULT_ACCENT_COLOR, DEFAULT_VIEWPOINT_COLOR, DEFAULT_ACTIVE_VIEWPOINT_COLOR, getAccentColor, darkenHex } from '../../utils/theme';
+import ViewerMinimap from '../Map/ViewerMinimap';
+import L from 'leaflet';
 
 /* ── Small reusable field row ── */
 const Field: React.FC<{
@@ -123,6 +125,10 @@ const ProjectSettingsPanel: React.FC<{ mobileOpen?: boolean; onMobileClose?: () 
   const [isDeleting, setIsDeleting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mapFileRef = useRef<HTMLInputElement>(null);
+  const previewMapRef = useRef<L.Map | null>(null);
+  const zoomInputRef = useRef<HTMLInputElement>(null);
+  const [previewView, setPreviewView] = useState<{ zoom: number; center: [number, number] } | null>(null);
+  const [zoomText, setZoomText] = useState<string | null>(null);
 
   // Password protection state
   const [pwInput, setPwInput] = useState('');
@@ -130,6 +136,29 @@ const ProjectSettingsPanel: React.FC<{ mobileOpen?: boolean; onMobileClose?: () 
   const [pwError, setPwError] = useState<string | null>(null);
   const [pwSuccess, setPwSuccess] = useState(false);
   const [pwShowFields, setPwShowFields] = useState(false);
+  const [showMinimapPreview, setShowMinimapPreview] = useState(false);
+  const [viewerUrl, setViewerUrl] = useState<string | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  // The preview MapContainer has no initial center/zoom, so it only becomes
+  // "ready" once FitBounds sets the view. Poll until the map reports a real
+  // view so the controls + save always have a valid source.
+  useEffect(() => {
+    if (!showMinimapPreview) return;
+    let tries = 0;
+    const id = setInterval(() => {
+      const m = previewMapRef.current;
+      if (!m) { if (++tries > 60) clearInterval(id); return; }
+      try {
+        const c = m.getCenter();
+        setPreviewView({ zoom: m.getZoom(), center: [c.lat, c.lng] });
+        clearInterval(id);
+      } catch {
+        if (++tries > 60) clearInterval(id);
+      }
+    }, 100);
+    return () => clearInterval(id);
+  }, [showMinimapPreview]);
 
   const handleMapFileClick = () => mapFileRef.current?.click();
 
@@ -152,9 +181,6 @@ const ProjectSettingsPanel: React.FC<{ mobileOpen?: boolean; onMobileClose?: () 
   const updateMeta = (updates: Partial<typeof meta>) => {
     setProject({ ...project, project: { ...meta, ...updates } });
   };
-
-  const [viewerUrl, setViewerUrl] = useState<string | null>(null);
-  const [isSyncing, setIsSyncing] = useState(false);
 
   // Ensure the project (with all media uploaded to R2) is saved before sharing,
   // so the link always points to valid cloud data.
@@ -323,6 +349,78 @@ const ProjectSettingsPanel: React.FC<{ mobileOpen?: boolean; onMobileClose?: () 
           />
           <button
             onClick={() => updateMeta({ accentColor: undefined })}
+            title="Réinitialiser (bleu par défaut)"
+            style={{ background: '#252526', border: '1px solid #444', color: '#aaa', borderRadius: '4px', cursor: 'pointer', padding: '6px 8px', fontSize: '0.8rem' }}
+          >
+            Défaut
+          </button>
+        </div>
+      </Field>
+
+      {/* ── Couleur des viewpoints sur la minimap ── */}
+      <Field label="Couleur des viewpoints (minimap)">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <input
+            type="color"
+            value={mapConfig?.viewpointColor ?? DEFAULT_VIEWPOINT_COLOR}
+            onChange={(e) => {
+              if (!mapConfig) return;
+              setMapConfig({ ...mapConfig, viewpointColor: e.target.value });
+            }}
+            style={{ width: '40px', height: '32px', padding: 0, border: '1px solid #444', borderRadius: '4px', background: 'none', cursor: 'pointer' }}
+            title="Choisir la couleur des viewpoints sur la minimap"
+          />
+          <input
+            type="text"
+            value={mapConfig?.viewpointColor ?? ''}
+            placeholder={DEFAULT_VIEWPOINT_COLOR}
+            onChange={(e) => {
+              if (!mapConfig) return;
+              setMapConfig({ ...mapConfig, viewpointColor: e.target.value.trim() || undefined });
+            }}
+            style={{ ...inputStyle, flex: 1 }}
+          />
+          <button
+            onClick={() => {
+              if (!mapConfig) return;
+              setMapConfig({ ...mapConfig, viewpointColor: undefined });
+            }}
+            title="Réinitialiser (orange par défaut)"
+            style={{ background: '#252526', border: '1px solid #444', color: '#aaa', borderRadius: '4px', cursor: 'pointer', padding: '6px 8px', fontSize: '0.8rem' }}
+          >
+            Défaut
+          </button>
+        </div>
+      </Field>
+
+      {/* ── Couleur du viewpoint actif sur la minimap ── */}
+      <Field label="Couleur du viewpoint actif (minimap)">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <input
+            type="color"
+            value={mapConfig?.activeViewpointColor ?? DEFAULT_ACTIVE_VIEWPOINT_COLOR}
+            onChange={(e) => {
+              if (!mapConfig) return;
+              setMapConfig({ ...mapConfig, activeViewpointColor: e.target.value });
+            }}
+            style={{ width: '40px', height: '32px', padding: 0, border: '1px solid #444', borderRadius: '4px', background: 'none', cursor: 'pointer' }}
+            title="Choisir la couleur du viewpoint actif sur la minimap"
+          />
+          <input
+            type="text"
+            value={mapConfig?.activeViewpointColor ?? ''}
+            placeholder={DEFAULT_ACTIVE_VIEWPOINT_COLOR}
+            onChange={(e) => {
+              if (!mapConfig) return;
+              setMapConfig({ ...mapConfig, activeViewpointColor: e.target.value.trim() || undefined });
+            }}
+            style={{ ...inputStyle, flex: 1 }}
+          />
+          <button
+            onClick={() => {
+              if (!mapConfig) return;
+              setMapConfig({ ...mapConfig, activeViewpointColor: undefined });
+            }}
             title="Réinitialiser (bleu par défaut)"
             style={{ background: '#252526', border: '1px solid #444', color: '#aaa', borderRadius: '4px', cursor: 'pointer', padding: '6px 8px', fontSize: '0.8rem' }}
           >
@@ -559,7 +657,212 @@ const ProjectSettingsPanel: React.FC<{ mobileOpen?: boolean; onMobileClose?: () 
             </label>
           </div>
         </div>
+
+        {/* Minimap preview button */}
+        {(mapConfig?.type === 'custom' || mapConfig?.type === 'geographic') && (
+          <button
+            onClick={() => setShowMinimapPreview(true)}
+            style={{ ...mapActionBtnStyle, marginTop: '8px', display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}
+          >
+            👁️ Prévisualiser la minimap
+          </button>
+        )}
       </div>
+
+      {/* ── Minimap preview modal ──
+          Uses the exact same ViewerMinimap component as the live viewer so the
+          shape, proportions, accent and side controls are identical. */}
+      {showMinimapPreview && (
+        <div
+          onClick={() => setShowMinimapPreview(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9999,
+            background: 'rgba(0,0,0,0.7)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backdropFilter: 'blur(4px)',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '16px',
+            }}
+          >
+            <div style={{ fontSize: '0.85rem', color: '#ccc', fontWeight: 500 }}>
+              Prévisualisation Minimap
+            </div>
+
+            <ViewerMinimap
+              mapRef={previewMapRef}
+              accentColor={getAccentColor(project)}
+              accentColorDark={darkenHex(getAccentColor(project))}
+              floating={false}
+              previewMode
+              onViewChange={setPreviewView}
+              onClose={() => setShowMinimapPreview(false)}
+            />
+
+            {/* Zoom / position controls for the minimap view */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: 'min(42vw, 340px)', maxWidth: '100%' }}>
+              <div style={{ fontSize: '0.76rem', color: '#9aa', textAlign: 'center', lineHeight: 1.4 }}>
+                {mapConfig?.fixedMinimap
+                  ? 'Carte fixe : cette vue sera verrouillée (zoom + position).'
+                  : 'Carte libre : cette vue sera la position de départ au lancement.'}
+                <br />
+                Déplacez et zoomez la carte, puis enregistrez.
+              </div>
+              <div style={{ fontSize: '0.74rem', color: '#888', textAlign: 'center' }}>
+                {previewView
+                  ? `Vue actuelle — zoom ${previewView.zoom.toFixed(2)}`
+                  : 'Chargement de la vue…'}
+                {mapConfig?.minimapView && (
+                  <span style={{ color: '#6c6' }}>
+                    {' '}· enregistrée (zoom {mapConfig.minimapView.zoom.toFixed(2)})
+                  </span>
+                )}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}>
+                <label style={{ fontSize: '0.78rem', color: '#ccc' }}>Zoom</label>
+                <input
+                  ref={zoomInputRef}
+                  type="number"
+                  step="0.25"
+                  min={mapConfig?.image ? -10 : 1}
+                  max={17}
+                  value={zoomText !== null ? zoomText : (previewView ? Number(previewView.zoom.toFixed(2)) : '')}
+                  onFocus={(e) => { setZoomText(previewView ? previewView.zoom.toFixed(2) : '0'); e.target.select(); }}
+                  onChange={(e) => setZoomText(e.target.value)}
+                  style={{
+                    width: '72px',
+                    padding: '6px 8px',
+                    background: '#222',
+                    border: '1px solid #555',
+                    borderRadius: '6px',
+                    color: '#fff',
+                    fontSize: '0.82rem',
+                  }}
+                />
+                <button
+                  type="button"
+                  title="Appliquer le zoom à la minimap"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    // Read directly from the input element: clicking the button
+                    // blurs the field first, so relying on state would be cleared.
+                    const raw = zoomInputRef.current?.value ?? '';
+                    const trimmed = raw.trim();
+                    if (trimmed === '') {
+                      // Empty field → just re-sync the readout to the live map
+                      // zoom. Never silently apply 0 (which would look like a reset).
+                      const m = previewMapRef.current;
+                      const live = m ? m.getZoom() : (previewView?.zoom ?? NaN);
+                      if (Number.isFinite(live)) {
+                        setPreviewView((prev) => (prev ? { ...prev, zoom: live } : { zoom: live, center: [0, 0] }));
+                      }
+                      setZoomText(null);
+                      return;
+                    }
+                    const z = Number(trimmed);
+                    if (!Number.isFinite(z)) return;
+                    const clamped = Math.min(17, Math.max(mapConfig?.image ? -10 : 1, z));
+                    const m = previewMapRef.current;
+                    if (m) {
+                      try { m.setZoom(clamped); } catch { /* ignore */ }
+                    }
+                    // Read back the zoom the map actually applied (Leaflet clamps to
+                    // its own min/max, e.g. image maps cap at fitZoom + 2).
+                    const applied = m ? m.getZoom() : clamped;
+                    setPreviewView((prev) => (prev ? { ...prev, zoom: applied } : { zoom: applied, center: [0, 0] }));
+                    setZoomText(null);
+                  }}
+                  style={{
+                    padding: '6px 10px',
+                    background: '#007acc',
+                    border: '1px solid #005a9e',
+                    borderRadius: '6px',
+                    color: '#fff',
+                    cursor: 'pointer',
+                    fontSize: '0.9rem',
+                  }}
+                >
+                  ↻
+                </button>
+              </div>
+              <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                <button
+                  onClick={() => {
+                    if (!mapConfig) return;
+                    let view = previewView;
+                    const m = previewMapRef.current;
+                    if (!view && m) {
+                      try {
+                        const c = m.getCenter();
+                        view = { zoom: m.getZoom(), center: [c.lat, c.lng] };
+                      } catch { /* ignore */ }
+                    }
+                    if (!view) return;
+                    setMapConfig({ ...mapConfig, minimapView: { zoom: view.zoom, center: view.center } });
+                  }}
+                  style={{
+                    padding: '8px 16px',
+                    background: '#2e7d32',
+                    border: '1px solid #1b5e20',
+                    borderRadius: '6px',
+                    color: '#fff',
+                    cursor: 'pointer',
+                    fontSize: '0.82rem',
+                  }}
+                >
+                  💾 Enregistrer la vue
+                </button>
+                {mapConfig?.minimapView && (
+                  <button
+                    onClick={() => {
+                      if (!mapConfig) return;
+                      const { minimapView, ...rest } = mapConfig;
+                      void minimapView;
+                      setMapConfig({ ...rest });
+                    }}
+                    style={{
+                      padding: '8px 16px',
+                      background: '#333',
+                      border: '1px solid #555',
+                      borderRadius: '6px',
+                      color: '#fff',
+                      cursor: 'pointer',
+                      fontSize: '0.82rem',
+                    }}
+                  >
+                    ↺ Vue auto
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <button
+              onClick={() => setShowMinimapPreview(false)}
+              style={{
+                padding: '8px 24px',
+                background: '#333',
+                border: '1px solid #555',
+                borderRadius: '6px',
+                color: '#fff',
+                cursor: 'pointer',
+                fontSize: '0.85rem',
+              }}
+            >
+              Fermer
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Viewer link ── */}
       <div style={{ borderTop: '1px solid #333', paddingTop: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>

@@ -2,6 +2,12 @@ import type { Project } from '../models/Project';
 
 export const DEFAULT_ACCENT_COLOR = '#007acc';
 
+/** Couleur par défaut des markers de viewpoint sur la minimap. */
+export const DEFAULT_VIEWPOINT_COLOR = '#ff5722';
+
+/** Couleur par défaut du viewpoint actif (sélectionné/courant) sur la minimap. */
+export const DEFAULT_ACTIVE_VIEWPOINT_COLOR = '#007acc';
+
 /**
  * Returns the project's accent color used across the viewer (minimap buttons,
  * navigation links, info hotspots). Falls back to the default blue when the

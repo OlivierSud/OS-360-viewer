@@ -8,22 +8,7 @@ import ProjectMap from '../components/Map/ProjectMap';
 import ViewerErrorBoundary from '../components/Viewer/ViewerErrorBoundary';
 import { loadCloudProject } from '../services/cloudflareApi';
 import { getAccentColor, darkenHex } from '../utils/theme';
-
-const makeMapBtnStyle = (accent: string, accentDark: string): React.CSSProperties => ({
-  width: '44px',
-  height: '44px',
-  borderRadius: '50%',
-  border: '1px solid rgba(255,255,255,0.12)',
-  background: `linear-gradient(180deg, ${accent} 0%, ${accentDark} 100%)`,
-  color: 'white',
-  cursor: 'pointer',
-  fontSize: '1.3rem',
-  lineHeight: 1,
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  boxShadow: `inset 0 1px 1px rgba(255,255,255,0.4), inset 0 -1.5px 1px rgba(0,0,0,0.2), 0 0 0 3px ${accent}59, 0 4px 10px rgba(0,0,0,0.4)`,
-});
+import ViewerMinimap, { makeMapBtnStyle } from '../components/Map/ViewerMinimap';
 
 const ViewerPage: React.FC = () => {
   const setMode = useProjectStore((state) => state.setMode);
@@ -42,7 +27,6 @@ const ViewerPage: React.FC = () => {
   const [showMap, setShowMap] = useState(true);
   const [mapExpanded, setMapExpanded] = useState(false);
   const [status, setStatus] = useState<'loading' | 'password-required' | 'ready' | 'error'>('loading');
-
   useEffect(() => {
     setMode('viewer');
   }, [setMode]);
@@ -175,104 +159,19 @@ const ViewerPage: React.FC = () => {
         </button>
       )}
 
-      {/* Mini map overlay: round plan (30vw) pinned top-right, with its
-          controls orbiting on the outside of the circle. The wrapper is larger
-          than the map so the buttons sit outside the rim. */}
-       {showMap && !mapExpanded && (() => {
-          const isCustomMap = project?.map?.type === 'custom' && Boolean(project?.map?.width && project?.map?.height);
-          const minimapShape = project?.map?.minimapShape ?? 'round';
-          const imgW = project?.map?.width || 1;
-          const imgH = project?.map?.height || 1;
-
-          return (
-            <div
-              className="viewer-minimap"
-              style={{
-                position: 'absolute',
-                top: '20px',
-                right: '20px',
-                zIndex: 1050,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              {/* Map container matching image ratio or circular for GPS */}
-              <div
-                style={{
-                  position: 'relative',
-                  width: isCustomMap ? 'min(42vw, 360px)' : 'min(45vw, 45vh, 320px)',
-                  maxHeight: isCustomMap ? 'min(35vh, 260px)' : 'min(45vw, 45vh, 320px)',
-                  aspectRatio: isCustomMap ? `${imgW} / ${imgH}` : '1 / 1',
-                  borderRadius: (!isCustomMap || minimapShape === 'round') ? '50%' : '14px',
-                  border: '1px solid rgba(255,255,255,0.18)',
-                  overflow: 'hidden',
-                  boxShadow: `inset 0 1px 3px rgba(0,0,0,0.3), 0 0 0 3px ${accentColor}59, 0 12px 36px rgba(0,0,0,0.45)`,
-                  background: '#111',
-                }}
-              >
-                <ProjectMap mapRef={mapRef} hideZoomControl mode="viewer" />
-              </div>
-
-              {/* Peripheral controls */}
-              <button
-                className="mm-btn mm-close"
-                onClick={() => setShowMap(false)}
-                title="Fermer le plan"
-                style={{ ...mapBtnStyle, position: 'absolute', right: '-12px', top: '-12px', width: '40px', height: '40px', fontSize: '1.2rem', borderRadius: '50%', zIndex: 1100 }}
-              >
-                ✕
-              </button>
-
-              <button
-                className="mm-btn mm-expand"
-                onClick={() => setMapExpanded(true)}
-                title="Agrandir le plan"
-                style={{ ...mapBtnStyle, position: 'absolute', right: '-12px', bottom: '-12px', width: '40px', height: '40px', fontSize: '1.1rem', borderRadius: '50%', zIndex: 1100 }}
-              >
-                ⤢
-              </button>
-
-              {!project?.map?.fixedMinimap && (
-                <>
-                  <button
-                    className="mm-btn mm-zoom-in"
-                    onClick={() => mapRef.current?.zoomIn()}
-                    title="Zoom avant"
-                    style={{ ...mapBtnStyle, position: 'absolute', left: '-12px', top: '-12px', width: '40px', height: '40px', fontSize: '1.2rem', borderRadius: '50%', zIndex: 1100 }}
-                  >
-                    +
-                  </button>
-                  <button
-                    className="mm-btn mm-zoom-out"
-                    onClick={() => mapRef.current?.zoomOut()}
-                    title="Zoom arrière"
-                    style={{ ...mapBtnStyle, position: 'absolute', left: '-20px', top: '50%', transform: 'translateY(-50%)', width: '40px', height: '40px', fontSize: '1.2rem', borderRadius: '50%', zIndex: 1100 }}
-                  >
-                    −
-                  </button>
-                  <button
-                    className="mm-btn mm-recenter"
-                    onClick={() => {
-                      const state = useProjectStore.getState();
-                      const activeScene = state.scenes.find(s => s.id === state.selectedSceneId);
-                      if (activeScene && mapRef.current) {
-                        mapRef.current.panTo([activeScene.position.y, activeScene.position.x]);
-                      }
-                    }}
-                    title="Recentrer sur le viewpoint actif"
-                    style={{ ...mapBtnStyle, position: 'absolute', left: '-12px', bottom: '-12px', width: '40px', height: '40px', borderRadius: '50%', zIndex: 1100 }}
-                  >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M12 2C8.5 2 5.5 5 5.5 8.5c0 4.5 6.5 10 6.5 10s6.5-5.5 6.5-10C18.5 5 15.5 2 12 2zm0 10c-1.93 0-3.5-1.57-3.5-3.5S10.07 5 12 5s3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z" fill="currentColor" stroke="none" />
-                      <ellipse cx="12" cy="20" rx="6" ry="2" stroke="currentColor" strokeWidth="2" fill="none" />
-                    </svg>
-                  </button>
-                </>
-              )}
-            </div>
-          );
-        })()}
+       {/* Mini map overlay: round plan pinned top-right, with its
+           controls beside it. Reuses the exact same component as the
+           properties preview popup so the two are always identical. */}
+        {showMap && !mapExpanded && (
+          <ViewerMinimap
+            mapRef={mapRef}
+            accentColor={accentColor}
+            accentColorDark={accentColorDark}
+            floating
+            onClose={() => setShowMap(false)}
+            onExpand={() => setMapExpanded(true)}
+          />
+        )}
 
       {/* Expanded map overlay (rectangular, full screen) */}
       {showMap && mapExpanded && (
@@ -291,7 +190,13 @@ const ViewerPage: React.FC = () => {
             background: '#111',
           }}
         >
-            <ProjectMap mapRef={mapRef} hideZoomControl={true} mode="viewer" />
+          <ProjectMap 
+            key={`expanded-${project?.map?.image ?? 'gps'}`}
+            mapRef={mapRef} 
+            hideZoomControl={true} 
+            mode="viewer"
+            fixedMinimapOverride={false}
+          />
           
           {/* Controls column inside the expanded map */}
           <div
